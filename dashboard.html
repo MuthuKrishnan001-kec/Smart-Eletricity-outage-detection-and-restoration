@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartGrid API Dashboard</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', sans-serif;
+        margin: 0;
+        background: #f4f7fa;
+        color: #1a2433;
+      }
+      .container {
+        max-width: 1200px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #dfe5ee;
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+        margin-bottom: 24px;
+      }
+      canvas {
+        width: 100%;
+        max-width: 1000px;
+        height: 520px;
+        background: #f9fbff;
+        border: 1px solid #dfe5ee;
+        border-radius: 10px;
+        display: block;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid #edf1f5;
+      }
+      th {
+        background: #f8fafc;
+      }
+      .status {
+        color: #3559a6;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>SmartGrid Live Dashboard</h1>
+      <div class="panel">
+        <h2>Network</h2>
+        <canvas id="networkCanvas" width="960" height="520"></canvas>
+      </div>
+
+      <div class="panel">
+        <h2>History</h2>
+        <table id="historyTable">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Event Type</th>
+              <th>Line ID</th>
+              <th>Affected Zones</th>
+              <th>Assigned Team</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Repair Teams</h2>
+        <table id="teamsTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Depot</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="statusText" class="status">Loading data…</p>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
