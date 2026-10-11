@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Network overview of the SmartGrid Monitor demonstration topology." />
+    <title>SmartGrid Monitor | Network Overview</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div class="brand-text">SmartGrid Monitor</div>
+        </div>
+
+        <nav class="nav" aria-label="Sidebar navigation">
+          <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
+          <a class="nav-item active" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
+          <a class="nav-item" href="outages.html"><span class="nav-icon">⚠</span> Outage Monitoring</a>
+          <a class="nav-item" href="teams.html"><span class="nav-icon">👥</span> Repair Teams</a>
+          <a class="nav-item" href="analytics.html"><span class="nav-icon">▤</span> Analytics &amp; Graphs</a>
+          <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
+          <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
+        </nav>
+
+        <div class="sidebar-footer">Static view of the Java network model</div>
+      </aside>
+
+      <div class="main-panel">
+        <header class="topbar">
+          <div class="page-heading">
+            <h1>Network Overview</h1>
+          </div>
+          <div class="topbar-meta">
+            <span class="status-pill"><span class="status-dot"></span> 13 nodes / 14 lines</span>
+            <a class="header-action" href="network.html">Refresh</a>
+          </div>
+        </header>
+
+        <main class="content">
+          <div class="card network-board">
+            <svg class="network-svg" viewBox="0 0 1100 600" role="img" aria-label="Smart electricity distribution network diagram">
+              <defs>
+                <style>
+                  .label { font: 600 16px 'Segoe UI', sans-serif; fill: #1c2a39; }
+                  .small { font: 600 12px 'Segoe UI', sans-serif; fill: #5f7087; }
+                  .line-ok { stroke: #5cb081; stroke-width: 5; fill: none; }
+                  .line-backup { stroke: #4c7ae7; stroke-width: 4; fill: none; stroke-dasharray: 8 8; }
+                  .line-fail { stroke: #dc3d4b; stroke-width: 5; fill: none; }
+                  .node-sub { fill: #dfeeff; stroke: #2364d2; stroke-width: 3; }
+                  .node-feeder { fill: #eafaf3; stroke: #1f9d71; stroke-width: 3; }
+                  .node-zone { fill: #fff0d9; stroke: #d9931a; stroke-width: 3; }
+                  .node-critical { fill: #ffe7eb; stroke: #dc3d4b; stroke-width: 3; }
+                </style>
+              </defs>
+
+              <line class="line-ok" x1="150" y1="120" x2="330" y2="120" />
+              <line class="line-ok" x1="150" y1="210" x2="330" y2="210" />
+              <line class="line-ok" x1="750" y1="120" x2="940" y2="120" />
+              <line class="line-ok" x1="750" y1="210" x2="940" y2="210" />
+              <line class="line-ok" x1="330" y1="120" x2="480" y2="120" />
+              <line class="line-ok" x1="330" y1="210" x2="480" y2="210" />
+              <line class="line-ok" x1="480" y1="120" x2="640" y2="270" />
+              <line class="line-ok" x1="480" y1="210" x2="640" y2="270" />
+              <line class="line-ok" x1="640" y1="270" x2="750" y2="120" />
+              <line class="line-ok" x1="640" y1="270" x2="750" y2="210" />
+              <line class="line-ok" x1="480" y1="120" x2="640" y2="420" />
+              <line class="line-ok" x1="480" y1="210" x2="640" y2="420" />
+              <line class="line-backup" x1="640" y1="270" x2="750" y2="420" />
+              <line class="line-backup" x1="480" y1="120" x2="750" y2="420" />
+              <line class="line-backup" x1="330" y1="120" x2="750" y2="210" />
+
+              <circle class="node-sub" cx="150" cy="120" r="28" />
+              <circle class="node-sub" cx="150" cy="210" r="28" />
+              <circle class="node-feeder" cx="330" cy="120" r="24" />
+              <circle class="node-feeder" cx="330" cy="210" r="24" />
+              <circle class="node-feeder" cx="750" cy="120" r="24" />
+              <circle class="node-feeder" cx="750" cy="210" r="24" />
+              <circle class="node-zone" cx="480" cy="120" r="22" />
+              <circle class="node-zone" cx="480" cy="210" r="22" />
+              <circle class="node-zone" cx="640" cy="270" r="24" />
+              <circle class="node-zone" cx="940" cy="120" r="22" />
+              <circle class="node-zone" cx="940" cy="210" r="22" />
+              <circle class="node-critical" cx="640" cy="420" r="27" />
+              <circle class="node-critical" cx="750" cy="420" r="27" />
+
+              <text class="label" x="116" y="94">S1</text>
+              <text class="label" x="116" y="184">S2</text>
+              <text class="label" x="314" y="95">F1</text>
+              <text class="label" x="314" y="185">F2</text>
+              <text class="label" x="734" y="95">F3</text>
+              <text class="label" x="734" y="185">F4</text>
+              <text class="label" x="463" y="95">C1</text>
+              <text class="label" x="463" y="184">C2</text>
+              <text class="label" x="620" y="248">C3</text>
+              <text class="label" x="924" y="94">C4</text>
+              <text class="label" x="924" y="184">C5</text>
+              <text class="label" x="621" y="408">H1</text>
+              <text class="label" x="736" y="408">E1</text>
+            </svg>
+          </div>
+
+          <div class="legend" aria-label="Network legend">
+            <span class="legend-item"><span class="legend-swatch" style="background: #5cb081"></span>Healthy line</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #2364d2"></span>Backup link</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #dc3d4b"></span>Critical or failed path</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #dfeeff"></span>Substation</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #eafaf3"></span>Feeder</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #fff0d9"></span>Consumer area</span>
+          </div>
+
+          <div class="summary-box" style="margin-top: 20px;">
+            <div class="kpi-box">
+              <span class="muted">North</span>
+              <strong>2 feeders</strong>
+            </div>
+            <div class="kpi-box">
+              <span class="muted">South</span>
+              <strong>2 feeders</strong>
+            </div>
+            <div class="kpi-box">
+              <span class="muted">Downtown</span>
+              <strong>Central ring path</strong>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

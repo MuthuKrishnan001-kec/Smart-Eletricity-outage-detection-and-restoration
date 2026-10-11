@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="SmartGrid Monitor dashboard for outage detection and restoration." />
+    <title>SmartGrid Monitor | Dashboard</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div class="brand-text">SmartGrid Monitor</div>
+        </div>
+
+        <nav class="nav" aria-label="Sidebar navigation">
+          <a class="nav-item active" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
+          <a class="nav-item" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
+          <a class="nav-item" href="outages.html"><span class="nav-icon">⚠</span> Outage Monitoring</a>
+          <a class="nav-item" href="teams.html"><span class="nav-icon">👥</span> Repair Teams</a>
+          <a class="nav-item" href="analytics.html"><span class="nav-icon">▤</span> Analytics &amp; Graphs</a>
+          <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
+          <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
+        </nav>
+
+        <div class="sidebar-footer">Local demo view • Java model preserved</div>
+      </aside>
+
+      <div class="main-panel">
+        <header class="topbar">
+          <div class="page-heading">
+            <h1>Dashboard</h1>
+          </div>
+          <div class="topbar-meta">
+            <span class="status-pill"><span class="status-dot"></span> Grid stable</span>
+            <a class="header-action" href="index.html">Refresh</a>
+          </div>
+        </header>
+
+        <main class="content">
+          <section class="grid stats-grid" aria-label="Summary statistics">
+            <article class="card stat-card blue-bg">
+              <div class="stat-label">Total substations</div>
+              <div class="stat-value">2</div>
+              <div class="stat-foot">North and South sources</div>
+            </article>
+
+            <article class="card stat-card green-bg">
+              <div class="stat-label">Total feeders</div>
+              <div class="stat-value">4</div>
+              <div class="stat-foot">Primary distribution paths</div>
+            </article>
+
+            <article class="card stat-card gray-bg">
+              <div class="stat-label">Consumer zones</div>
+              <div class="stat-value">5</div>
+              <div class="stat-foot">General areas monitored</div>
+            </article>
+
+            <article class="card stat-card red-bg">
+              <div class="stat-label">Active outages</div>
+              <div class="stat-value">1</div>
+              <div class="stat-foot">Fault queue in progress</div>
+            </article>
+
+            <article class="card stat-card amber-bg">
+              <div class="stat-label">Affected consumer zones</div>
+              <div class="stat-value">1</div>
+              <div class="stat-foot">Critical service impact</div>
+            </article>
+
+            <article class="card stat-card red-bg">
+              <div class="stat-label">Critical facilities</div>
+              <div class="stat-value">1</div>
+              <div class="stat-foot">Hospital or emergency center</div>
+            </article>
+
+            <article class="card stat-card green-bg">
+              <div class="stat-label">Available teams</div>
+              <div class="stat-value">3</div>
+              <div class="stat-foot">Ready for dispatch</div>
+            </article>
+
+            <article class="card stat-card blue-bg">
+              <div class="stat-label">Completed restorations</div>
+              <div class="stat-value">0</div>
+              <div class="stat-foot">Current cycle in progress</div>
+            </article>
+          </section>
+
+          <section class="section-grid" style="margin-top: 20px;">
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Grid health overview</h2>
+                <span class="muted">Current network snapshot</span>
+              </div>
+
+              <div class="progress-stack">
+                <div class="progress-row">
+                  <span>Power integrity</span>
+                  <div class="progress-bar"><span style="width: 92%"></span></div>
+                  <strong>92%</strong>
+                </div>
+                <div class="progress-row">
+                  <span>Service continuity</span>
+                  <div class="progress-bar"><span class="warn" style="width: 76%"></span></div>
+                  <strong>76%</strong>
+                </div>
+                <div class="progress-row">
+                  <span>Critical loads</span>
+                  <div class="progress-bar"><span class="danger" style="width: 38%"></span></div>
+                  <strong>38%</strong>
+                </div>
+              </div>
+            </article>
+
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">District status</h2>
+                <span class="muted">North / South / Downtown</span>
+              </div>
+
+              <div class="district-grid">
+                <div class="district-card">
+                  <h3>North</h3>
+                  <div class="mini-bars">
+                    <div class="mini-row"><span>Power</span><div class="progress-bar"><span class="safe" style="width: 87%"></span></div><strong>87%</strong></div>
+                    <div class="mini-row"><span>Outages</span><div class="progress-bar"><span class="danger" style="width: 25%"></span></div><strong>1</strong></div>
+                  </div>
+                </div>
+
+                <div class="district-card">
+                  <h3>South</h3>
+                  <div class="mini-bars">
+                    <div class="mini-row"><span>Power</span><div class="progress-bar"><span class="safe" style="width: 93%"></span></div><strong>93%</strong></div>
+                    <div class="mini-row"><span>Outages</span><div class="progress-bar"><span class="warn" style="width: 14%"></span></div><strong>0</strong></div>
+                  </div>
+                </div>
+
+                <div class="district-card">
+                  <h3>Downtown</h3>
+                  <div class="mini-bars">
+                    <div class="mini-row"><span>Power</span><div class="progress-bar"><span class="warn" style="width: 68%"></span></div><strong>68%</strong></div>
+                    <div class="mini-row"><span>Outages</span><div class="progress-bar"><span class="danger" style="width: 31%"></span></div><strong>1</strong></div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="section-grid" style="margin-top: 20px;">
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Recent faults</h2>
+                <span class="muted">Service alerts</span>
+              </div>
+
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Fault</th>
+                      <th>Line</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>L7</td>
+                      <td>F2 → H1</td>
+                      <td>High</td>
+                      <td><span class="status-label status-critical">Active</span></td>
+                    </tr>
+                    <tr>
+                      <td>L1</td>
+                      <td>S1 → F1</td>
+                      <td>Medium</td>
+                      <td><span class="status-label status-watch">Monitoring</span></td>
+                    </tr>
+                    <tr>
+                      <td>L3</td>
+                      <td>S2 → F3</td>
+                      <td>Low</td>
+                      <td><span class="status-label status-available">Restored</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Repair team availability</h2>
+                <span class="muted">Current dispatch pool</span>
+              </div>
+
+              <div class="signal-list">
+                <div class="signal-item">
+                  <div class="signal-meta">
+                    <strong>RT1 • Alpha Crew</strong>
+                    <span>North Depot</span>
+                  </div>
+                  <span class="status-label status-available">Available</span>
+                </div>
+                <div class="signal-item">
+                  <div class="signal-meta">
+                    <strong>RT2 • Bravo Crew</strong>
+                    <span>South Depot</span>
+                  </div>
+                  <span class="status-label status-dispatched">Dispatched</span>
+                </div>
+                <div class="signal-item">
+                  <div class="signal-meta">
+                    <strong>RT3 • Charlie Crew</strong>
+                    <span>North Depot</span>
+                  </div>
+                  <span class="status-label status-repairing">Repairing</span>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="section-grid" style="margin-top: 20px;">
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Restoration progress</h2>
+                <span class="muted">Current restoration workflow</span>
+              </div>
+
+              <div class="progress-stack">
+                <div class="progress-row">
+                  <span>Fault queue</span>
+                  <div class="progress-bar"><span class="warn" style="width: 64%"></span></div>
+                  <strong>64%</strong>
+                </div>
+                <div class="progress-row">
+                  <span>Backup plan</span>
+                  <div class="progress-bar"><span class="safe" style="width: 81%"></span></div>
+                  <strong>81%</strong>
+                </div>
+                <div class="progress-row">
+                  <span>Repair completion</span>
+                  <div class="progress-bar"><span style="width: 52%"></span></div>
+                  <strong>52%</strong>
+                </div>
+              </div>
+            </article>
+
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Critical facilities</h2>
+                <span class="muted">Priority service monitoring</span>
+              </div>
+
+              <div class="signal-list">
+                <div class="signal-item">
+                  <div class="signal-meta">
+                    <strong>City General Hospital</strong>
+                    <span>H1 • Priority service</span>
+                  </div>
+                  <span class="status-label status-critical">Affected</span>
+                </div>
+                <div class="signal-item">
+                  <div class="signal-meta">
+                    <strong>District Emergency Centre</strong>
+                    <span>E1 • standby response</span>
+                  </div>
+                  <span class="status-label status-available">Stable</span>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="section-grid" style="margin-top: 20px;">
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Recent activity</h2>
+                <span class="muted">System events</span>
+              </div>
+
+              <div class="timeline">
+                <div class="timeline-item">
+                  <span class="timeline-dot" aria-hidden="true"></span>
+                  <div>
+                    <strong>Fault detected</strong>
+                    <div class="muted">Line L7 flagged by sensor monitor</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <span class="timeline-dot" aria-hidden="true"></span>
+                  <div>
+                    <strong>Dispatch initiated</strong>
+                    <div class="muted">RT2 assigned to the affected feeder route</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <span class="timeline-dot" aria-hidden="true"></span>
+                  <div>
+                    <strong>Backup review</strong>
+                    <div class="muted">Standby link selection is in progress</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Operational summary</h2>
+                <span class="muted">Current coverage</span>
+              </div>
+
+              <div class="summary-strip">
+                <span class="pill">13 Nodes</span>
+                <span class="pill">14 Lines</span>
+                <span class="pill">1 Fault</span>
+                <span class="pill">3 Teams</span>
+              </div>
+            </article>
+          </section>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>
