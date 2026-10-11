@@ -65,7 +65,7 @@ public class OutageDetector {
             if (node instanceof ConsumerArea) {
                 disconnectedConsumerAreas.add((ConsumerArea) node);
             }
-            if (node instanceof Hospital || node instanceof EmergencyCentre) {
+            if (node instanceof CriticalArea) {
                 affectedCriticalFacilities.add((CriticalArea) node);
             }
         }

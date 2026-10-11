@@ -7,9 +7,16 @@ public class NetworkLine {
     private LineStatus status;
     private final boolean backupLink;
     private final int repairTimeMinutes;
+    private final CityDistrict district;
 
     public NetworkLine(String id, String fromNodeId, String toNodeId,
                        boolean backupLink, int repairTimeMinutes) {
+        this(id, fromNodeId, toNodeId, backupLink, repairTimeMinutes,
+                CityDistrict.DOWNTOWN);
+    }
+
+    public NetworkLine(String id, String fromNodeId, String toNodeId,
+                       boolean backupLink, int repairTimeMinutes, CityDistrict district) {
         this.id = requireIdentifier(id, "id");
         this.fromNodeId = requireIdentifier(fromNodeId, "fromNodeId");
         this.toNodeId = requireIdentifier(toNodeId, "toNodeId");
@@ -21,6 +28,10 @@ public class NetworkLine {
         }
         this.backupLink = backupLink;
         this.repairTimeMinutes = repairTimeMinutes;
+        if (district == null) {
+            throw new IllegalArgumentException("district must not be null.");
+        }
+        this.district = district;
         this.status = backupLink ? LineStatus.STANDBY : LineStatus.WORKING;
     }
 
@@ -54,6 +65,14 @@ public class NetworkLine {
 
     public int getRepairTimeMinutes() {
         return repairTimeMinutes;
+    }
+
+    public CityDistrict getDistrict() {
+        return district;
+    }
+
+    public String getFaultZone() {
+        return district.getDisplayName();
     }
 
     public void failLine() {

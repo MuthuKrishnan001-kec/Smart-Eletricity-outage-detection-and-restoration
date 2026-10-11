@@ -1,13 +1,15 @@
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.TreeSet;
@@ -16,19 +18,28 @@ public class RestorationPolicy {
     private static final Comparator<FaultReport> FAULT_PRIORITY = Comparator
             .comparingInt(FaultReport::getCriticalFacilityCount).reversed()
             .thenComparing(Comparator
-                    .comparingInt(FaultReport::getAffectedConsumerCount).reversed())
+                    .comparingInt(
+                            FaultReport::getIndustrialCommercialEconomicImpact).reversed())
+            .thenComparing(Comparator
+                    .comparingInt(FaultReport::getResidentialHouseholdsAffected).reversed())
             .thenComparingLong(FaultReport::getReportOrder);
 
     private final PriorityQueue<FaultReport> faultQueue =
             new PriorityQueue<>(FAULT_PRIORITY);
     private final List<FaultReport> history = new ArrayList<>();
     private final List<RepairTeam> repairTeams = new ArrayList<>();
+    private final HistoryManager historyManager;
 
     public RestorationPolicy() {
-        this(defaultRepairTeams());
+        this(defaultRepairTeams(), null);
     }
 
     public RestorationPolicy(Collection<RepairTeam> repairTeams) {
+        this(repairTeams, null);
+    }
+
+    private RestorationPolicy(
+            Collection<RepairTeam> repairTeams, HistoryManager historyManager) {
         if (repairTeams == null) {
             throw new IllegalArgumentException("repairTeams must not be null.");
         }
@@ -38,17 +49,29 @@ public class RestorationPolicy {
             }
             this.repairTeams.add(team);
         }
+        this.historyManager = historyManager;
+    }
+
+    public static RestorationPolicy withHistoryManager(HistoryManager historyManager) {
+        if (historyManager == null) {
+            throw new IllegalArgumentException("historyManager must not be null.");
+        }
+        return new RestorationPolicy(defaultRepairTeams(), historyManager);
     }
 
     private static List<RepairTeam> defaultRepairTeams() {
         List<RepairTeam> teams = new ArrayList<>();
-        teams.add(new RepairTeam("RT1", "Alpha Crew", "S1"));
-        teams.add(new RepairTeam("RT2", "Bravo Crew", "S2"));
-        teams.add(new RepairTeam("RT3", "Charlie Crew", "S1"));
+        teams.add(new RepairTeam("RT1", "Alpha"));
+        teams.add(new RepairTeam("RT2", "Bravo"));
+        teams.add(new RepairTeam("RT3", "Charlie"));
         return teams;
     }
 
     public void submitFault(FaultReport report) {
+        submitFault(report, null);
+    }
+
+    public void submitFault(FaultReport report, DistributionNetwork network) {
         if (report == null) {
             throw new IllegalArgumentException("report must not be null.");
         }
@@ -62,6 +85,7 @@ public class RestorationPolicy {
         });
         faultQueue.add(report);
         history.add(report);
+        assignAvailableTeams(network);
     }
 
     public int getPendingFaultCount() {
@@ -70,6 +94,10 @@ public class RestorationPolicy {
 
     public FaultReport peekNextFault() {
         return faultQueue.peek();
+    }
+
+    public PriorityQueue<FaultReport> getPendingFaultQueue() {
+        return new PriorityQueue<>(faultQueue);
     }
 
     public List<FaultReport> getHistory() {
@@ -101,23 +129,37 @@ public class RestorationPolicy {
         if (network == null || detector == null) {
             throw new IllegalArgumentException("network and detector must not be null.");
         }
+        assignAvailableTeams(network);
         FaultReport report = faultQueue.peek();
+        if (report != null && report.getAssignedTeam() == null) {
+            for (FaultReport pendingReport : faultQueue) {
+                if (pendingReport.getAssignedTeam() != null
+                        && (report.getAssignedTeam() == null
+                                || FAULT_PRIORITY.compare(pendingReport, report) < 0)) {
+                    report = pendingReport;
+                }
+            }
+        }
         if (report == null) {
             System.out.println("There are no faults waiting for restoration.");
             return false;
         }
 
-        RepairAssignment assignment = findBestAvailableTeam(network, report.getFailedLine());
-        if (assignment == null) {
-            System.out.println("No repair team is currently available.");
-            return false;
-        }
-
         faultQueue.remove(report);
-        RepairTeam team = assignment.team;
-        team.assign();
-        report.assignRepairTeam(team);
-        report.setEstimatedRepairTimeMinutes(assignment.estimatedTimeMinutes);
+        RepairTeam team = report.getAssignedTeam();
+        if (team == null) {
+            RepairAssignment assignment =
+                    findBestAvailableTeam(network, report.getFailedLine());
+            if (assignment == null) {
+                faultQueue.add(report);
+                System.out.println("No repair team is currently available.");
+                return false;
+            }
+            team = assignment.team;
+            team.assign();
+            report.assignRepairTeam(team);
+            report.setEstimatedRepairMinutes(assignment.estimatedTimeMinutes);
+        }
         NetworkLine failedLine = report.getFailedLine();
         System.out.println("Selected fault: " + failedLine.getId()
                 + " (critical facilities " + report.getCriticalFacilityCount()
@@ -126,6 +168,8 @@ public class RestorationPolicy {
         System.out.println("Estimated repair time: "
                 + report.getEstimatedRepairTimeMinutes() + " minute(s)");
 
+        List<UncheckedIOException> historyFailures = new ArrayList<>();
+        boolean allNodesRestored = false;
         try {
             RestorationPlan plan = chooseBestPlan(network, detector, report);
             System.out.println("Selected backup plan score: " + plan.score);
@@ -137,6 +181,13 @@ public class RestorationPolicy {
                     System.out.println(backupLine.getId() + " status: "
                             + backupLine.getStatus());
                 }
+                logRestorationEvent(
+                        "BACKUP_PLAN_ACTIVATED",
+                        lineIds(plan.backupLines),
+                        affectedZones(report),
+                        team.getName(),
+                        "ACTIVATED",
+                        historyFailures);
             }
 
             Set<NetworkNode> reachableWithPlan = detector.findReachableNodes(network);
@@ -153,7 +204,14 @@ public class RestorationPolicy {
                     + failedLine.getStatus());
 
             List<NetworkNode> remainingAffected = detector.findAffectedNodes(network);
-            boolean allNodesRestored = remainingAffected.isEmpty();
+            allNodesRestored = remainingAffected.isEmpty();
+            logRestorationEvent(
+                    "REPAIR_COMPLETED",
+                    failedLine.getId(),
+                    affectedZones(report),
+                    team.getName(),
+                    allNodesRestored ? "RESTORED" : "INCOMPLETE",
+                    historyFailures);
             System.out.println("Running final BFS restoration verification...");
             if (allNodesRestored) {
                 report.markRestored();
@@ -162,21 +220,77 @@ public class RestorationPolicy {
                 System.out.println("Restoration incomplete: " + remainingAffected.size()
                         + " node(s) remain unreachable.");
             }
-            return allNodesRestored;
         } finally {
             team.release();
+            report.setTeamStatus(team.getStatus().name());
             System.out.println(team.getId() + " is now AVAILABLE.");
+            assignAvailableTeams(network);
         }
+        if (!historyFailures.isEmpty()) {
+            UncheckedIOException failure = historyFailures.get(0);
+            for (int i = 1; i < historyFailures.size(); i++) {
+                failure.addSuppressed(historyFailures.get(i));
+            }
+            throw failure;
+        }
+        return allNodesRestored;
     }
 
     public int estimateRepairTimeMinutes(
             DistributionNetwork network, RepairTeam team, NetworkLine failedLine) {
-        if (network == null || team == null || failedLine == null) {
-            throw new IllegalArgumentException(
-                    "network, team and failedLine must not be null.");
+        if (team == null || failedLine == null) {
+            throw new IllegalArgumentException("team and failedLine must not be null.");
         }
-        int travelTime = estimateTravelTimeMinutes(network, team, failedLine);
-        return Math.addExact(failedLine.getRepairTimeMinutes(), travelTime);
+        int travelTime = team.getHomeDistrict().travelMinutesTo(failedLine.getDistrict());
+        return Math.addExact(45, travelTime);
+    }
+
+    public List<String> calculateBestBackupPath(
+            DistributionNetwork network, OutageDetector detector, FaultReport report) {
+        if (network == null || detector == null || report == null) {
+            throw new IllegalArgumentException(
+                    "network, detector, and report must not be null.");
+        }
+        RestorationPlan plan = chooseBestPlan(network, detector, report);
+        List<String> path = new ArrayList<>();
+        for (NetworkLine line : plan.backupLines) {
+            path.add(line.getId());
+        }
+        Collections.sort(path);
+        return path;
+    }
+
+    private void logRestorationEvent(
+            String eventType,
+            String lineId,
+            String affectedZones,
+            String assignedTeam,
+            String status,
+            List<UncheckedIOException> failures) {
+        if (historyManager == null) {
+            return;
+        }
+        try {
+            historyManager.logEvent(
+                    Instant.now().toString(), eventType, lineId,
+                    affectedZones, assignedTeam, status);
+        } catch (IOException exception) {
+            failures.add(new UncheckedIOException(
+                    "Could not persist restoration event " + eventType, exception));
+        }
+    }
+
+    private String affectedZones(FaultReport report) {
+        Set<String> zones = new TreeSet<>();
+        for (NetworkNode node : report.getAffectedNodes()) {
+            if (node instanceof ZonedArea) {
+                zones.add(((ZonedArea) node).getDistrict().getDisplayName());
+            }
+        }
+        if (zones.isEmpty()) {
+            zones.add(report.getFailedLine().getFaultZone());
+        }
+        return String.join(", ", zones);
     }
 
     private RepairAssignment findBestAvailableTeam(
@@ -197,48 +311,58 @@ public class RestorationPolicy {
         return best;
     }
 
-    private int estimateTravelTimeMinutes(
-            DistributionNetwork network, RepairTeam team, NetworkLine failedLine) {
-        String depotNodeId = team.getDepotNodeId();
-        if (depotNodeId == null || network.getNode(depotNodeId) == null) {
-            throw new IllegalStateException("Repair team " + team.getId()
-                    + " has no valid depot in the distribution network.");
-        }
-
-        Map<String, Long> distances = new HashMap<>();
-        PriorityQueue<TravelStep> pending = new PriorityQueue<>(
-                Comparator.comparingLong(step -> step.travelTimeMinutes));
-        distances.put(depotNodeId, 0L);
-        pending.add(new TravelStep(depotNodeId, 0));
-        long shortestTravelTime = Long.MAX_VALUE;
-
-        while (!pending.isEmpty()) {
-            TravelStep step = pending.remove();
-            if (step.travelTimeMinutes != distances.get(step.nodeId)) {
+    private void assignAvailableTeams(DistributionNetwork network) {
+        List<FaultReport> pendingReports = new ArrayList<>(faultQueue);
+        pendingReports.sort(FAULT_PRIORITY);
+        for (FaultReport report : pendingReports) {
+            if (report.getAssignedTeam() != null) {
                 continue;
             }
-            if (step.nodeId.equals(failedLine.getFromNodeId())
-                    || step.nodeId.equals(failedLine.getToNodeId())) {
-                shortestTravelTime = step.travelTimeMinutes;
-                break;
+            RepairAssignment assignment;
+            if (network == null) {
+                assignment = findBestAvailableTeamWithoutNetwork(report.getFailedLine());
+            } else {
+                assignment = findBestAvailableTeam(network, report.getFailedLine());
             }
-            for (NetworkLine line : network.getIncidentLines(step.nodeId)) {
-                String nextNodeId = network.getOtherNodeId(line, step.nodeId);
-                long nextTime = step.travelTimeMinutes + line.getRepairTimeMinutes();
-                Long knownTime = distances.get(nextNodeId);
-                if (knownTime == null || nextTime < knownTime) {
-                    distances.put(nextNodeId, nextTime);
-                    pending.add(new TravelStep(nextNodeId, nextTime));
+            if (assignment == null) {
+                int estimate = estimateWithAnyTeam(network, report.getFailedLine());
+                if (estimate > 0) {
+                    report.setEstimatedRepairMinutes(estimate);
                 }
+                continue;
+            }
+            assignment.team.assign();
+            report.assignRepairTeam(assignment.team);
+            report.setTeamStatus(assignment.team.getStatus().name());
+            report.setEstimatedRepairMinutes(assignment.estimatedTimeMinutes);
+        }
+    }
+
+    private int estimateWithAnyTeam(DistributionNetwork network, NetworkLine failedLine) {
+        int bestEstimate = Integer.MAX_VALUE;
+        for (RepairTeam team : repairTeams) {
+            bestEstimate = Math.min(bestEstimate,
+                    estimateRepairTimeMinutes(network, team, failedLine));
+        }
+        return bestEstimate == Integer.MAX_VALUE ? 0 : bestEstimate;
+    }
+
+    private RepairAssignment findBestAvailableTeamWithoutNetwork(NetworkLine failedLine) {
+        RepairAssignment best = null;
+        for (RepairTeam team : repairTeams) {
+            if (!team.isAvailable()) {
+                continue;
+            }
+            RepairAssignment candidate =
+                    new RepairAssignment(team, estimateRepairTimeMinutes(null, team, failedLine));
+            if (best == null
+                    || candidate.estimatedTimeMinutes < best.estimatedTimeMinutes
+                    || (candidate.estimatedTimeMinutes == best.estimatedTimeMinutes
+                    && team.getId().compareTo(best.team.getId()) < 0)) {
+                best = candidate;
             }
         }
-
-        if (shortestTravelTime == Long.MAX_VALUE
-                || shortestTravelTime > Integer.MAX_VALUE) {
-            throw new IllegalStateException("No travel route from repair team "
-                    + team.getId() + " to line " + failedLine.getId() + ".");
-        }
-        return (int) shortestTravelTime;
+        return best;
     }
 
     private RestorationPlan chooseBestPlan(
@@ -253,7 +377,7 @@ public class RestorationPolicy {
                 if (!reachable.contains(node)) {
                     continue;
                 }
-                if (node instanceof Hospital || node instanceof EmergencyCentre) {
+                if (node instanceof CriticalArea) {
                     criticalRestored++;
                 }
                 if (node instanceof ConsumerArea) {
@@ -435,13 +559,4 @@ public class RestorationPolicy {
         }
     }
 
-    private static class TravelStep {
-        private final String nodeId;
-        private final long travelTimeMinutes;
-
-        private TravelStep(String nodeId, long travelTimeMinutes) {
-            this.nodeId = nodeId;
-            this.travelTimeMinutes = travelTimeMinutes;
-        }
-    }
 }
