@@ -10,9 +10,10 @@ public class FaultReport {
     private List<NetworkNode> affectedNodes;
     private final long reportOrder;
     private int priorityScore;
-    private RepairTeam repairTeam;
+    private RepairTeam assignedTeam;
+    private String teamStatus = "WAITING";
     private boolean restored;
-    private int estimatedRepairTimeMinutes;
+    private int estimatedRepairMinutes;
     private Runnable priorityChangeListener = () -> { };
 
     public FaultReport(NetworkLine failedLine, List<NetworkNode> affectedNodes) {
@@ -51,11 +52,41 @@ public class FaultReport {
     public int getCriticalFacilityCount() {
         int count = 0;
         for (NetworkNode node : affectedNodes) {
-            if (node instanceof Hospital || node instanceof EmergencyCentre) {
+            if (node instanceof CriticalArea) {
                 count++;
             }
         }
         return count;
+    }
+
+    public int getIndustrialCommercialEconomicImpact() {
+        int impact = 0;
+        for (NetworkNode node : affectedNodes) {
+            if (node instanceof ConsumerArea) {
+                ConsumerArea area = (ConsumerArea) node;
+                if (area instanceof ZonedArea
+                        && ((ZonedArea) area).getZone() != ConsumerZone.RESIDENTIAL) {
+                    impact += Math.multiplyExact(
+                            area.getPriorityWeight(), area.getConsumerCount());
+                }
+            }
+        }
+        return impact;
+    }
+
+    public int getResidentialHouseholdsAffected() {
+        int households = 0;
+        for (NetworkNode node : affectedNodes) {
+            if (!(node instanceof ConsumerArea) || node instanceof CriticalArea) {
+                continue;
+            }
+            ConsumerArea area = (ConsumerArea) node;
+            if (!(area instanceof ZonedArea)
+                    || ((ZonedArea) area).getZone() == ConsumerZone.RESIDENTIAL) {
+                households += area.getConsumerCount();
+            }
+        }
+        return households;
     }
 
     public int getAffectedConsumerCount() {
@@ -77,15 +108,32 @@ public class FaultReport {
     }
 
     public RepairTeam getRepairTeam() {
-        return repairTeam;
+        return assignedTeam;
+    }
+
+    public RepairTeam getAssignedTeam() {
+        return assignedTeam;
     }
 
     public void assignRepairTeam(RepairTeam repairTeam) {
-        this.repairTeam = repairTeam;
+        assignedTeam = repairTeam;
+        teamStatus = repairTeam == null ? "WAITING" : repairTeam.getStatus().name();
+    }
+
+    public String getTeamStatus() {
+        return teamStatus;
+    }
+
+    public void setTeamStatus(String teamStatus) {
+        this.teamStatus = Objects.requireNonNull(teamStatus, "teamStatus");
+    }
+
+    public int getEstimatedRepairMinutes() {
+        return estimatedRepairMinutes;
     }
 
     public int getEstimatedRepairTimeMinutes() {
-        return estimatedRepairTimeMinutes;
+        return estimatedRepairMinutes;
     }
 
     public void setEstimatedRepairTimeMinutes(int estimatedRepairTimeMinutes) {
@@ -93,7 +141,11 @@ public class FaultReport {
             throw new IllegalArgumentException(
                     "estimatedRepairTimeMinutes must not be negative.");
         }
-        this.estimatedRepairTimeMinutes = estimatedRepairTimeMinutes;
+        this.estimatedRepairMinutes = estimatedRepairTimeMinutes;
+    }
+
+    public void setEstimatedRepairMinutes(int estimatedRepairMinutes) {
+        setEstimatedRepairTimeMinutes(estimatedRepairMinutes);
     }
 
     void setPriorityChangeListener(Runnable priorityChangeListener) {

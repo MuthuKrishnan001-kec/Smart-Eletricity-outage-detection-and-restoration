@@ -18,19 +18,27 @@ public class Phase1StabilizationTest {
 
     private void testNormalOperationAndGraphShape() {
         DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
-        assertEquals(13, network.getNodes().size(), "node count");
-        assertEquals(14, network.getLines().size(), "line count");
-        assertEquals(13, detector.findReachableNodes(network).size(),
+        assertEquals(20, network.getNodes().size(), "node count");
+        assertEquals(21, network.getLines().size(), "line count");
+        assertEquals(18, primaryLineCount(network), "primary line count");
+        assertEquals(3, backupLineCount(network), "backup line count");
+        assertEquals(2, network.getSubstations().size(), "substation count");
+        assertEquals(20, detector.findReachableNodes(network).size(),
                 "reachable node count during normal operation");
+        assertEquals(3, criticalIds(network.getNodes()).size(),
+                "critical facility count");
 
         Set<String> expectedIds = new HashSet<>(Arrays.asList(
-                "S1", "S2", "F1", "F2", "F3", "F4", "C1",
-                "C2", "C3", "C4", "C5", "H1", "E1"));
+                "S1", "S2", "F1", "F2", "F3", "F4",
+                "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8",
+                "C9", "C10", "C11", "H1", "E1", "E2"));
         Set<String> actualIds = new HashSet<>();
         for (NetworkNode node : network.getNodes()) {
             actualIds.add(node.getId());
         }
         assertEquals(expectedIds, actualIds, "network node IDs");
+        assertEquals(20, new NetworkCanvas(network).getNodeCoordinates().size(),
+                "canvas node coordinate count");
 
         for (NetworkLine line : network.getLines()) {
             assertTrue(network.getIncidentLines(line.getFromNodeId()).contains(line),
@@ -41,6 +49,18 @@ public class Phase1StabilizationTest {
         assertTrue(network.getLine("L12").isBackupLink(), "L12 backup designation");
         assertEquals(LineStatus.STANDBY, network.getLine("L12").getStatus(),
                 "standby backup initial status");
+        for (String id : Arrays.asList(
+                "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8",
+                "C9", "C10", "C11")) {
+            assertEquals(10, ((ConsumerArea) network.getNode(id)).getPriorityWeight(),
+                    id + " general-area priority weight");
+        }
+        assertEquals(100, ((ConsumerArea) network.getNode("H1")).getPriorityWeight(),
+                "hospital priority weight");
+        assertEquals(90, ((ConsumerArea) network.getNode("E1")).getPriorityWeight(),
+                "emergency-centre priority weight");
+        assertEquals(90, ((ConsumerArea) network.getNode("E2")).getPriorityWeight(),
+                "additional emergency-centre priority weight");
     }
 
     private void testSingleFeederLineFailure() {
@@ -50,36 +70,44 @@ public class Phase1StabilizationTest {
         assertEquals(LineStatus.FAILED, failedLine.getStatus(), "failed line status");
 
         List<NetworkNode> affected = detector.findAffectedNodes(network);
-        assertEquals(Collections.singleton("H1"), consumerIds(affected),
+        assertEquals(new HashSet<>(Arrays.asList("H1")), consumerIds(affected),
                 "consumers disconnected by L7 failure");
         assertEquals(Collections.singleton("H1"), criticalIds(affected),
                 "critical loads disconnected by L7 failure");
         assertTrue(!network.getNode("H1").isPowered(), "affected hospital powered flag");
-        assertTrue(network.getNode("C3").isPowered(), "unaffected general area powered flag");
+        assertTrue(network.getNode("C5").isPowered(), "unaffected residential area powered flag");
 
-        network = DistributionNetwork.createDemonstrationNetwork();
-        network.getLine("L1").failLine();
-        assertEquals(new HashSet<>(Arrays.asList("C1", "C2")),
-                consumerIds(detector.findAffectedNodes(network)),
-                "consumers disconnected by L1 failure before backup activation");
-        network.getLine("L14").activateBackup();
-        assertEquals(13, detector.findReachableNodes(network).size(),
-                "reachable node count after approved backup activation");
+        String[][] backupTransferCases = {
+            {"L1", "L14"},
+            {"L2", "L12"},
+            {"L3", "L13"}
+        };
+        for (String[] transferCase : backupTransferCases) {
+            network = DistributionNetwork.createDemonstrationNetwork();
+            network.getLine(transferCase[0]).failLine();
+            network.getLine(transferCase[1]).activateBackup();
+            assertEquals(20, detector.findReachableNodes(network).size(),
+                    transferCase[0] + " failure should reroute through "
+                            + transferCase[1]);
+        }
     }
 
     private void testMultipleLineFailuresAndOfflineSubstation() {
         DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
+        network.getLine("L1").failLine();
         network.getLine("L2").failLine();
-        network.getLine("L3").failLine();
 
         List<NetworkNode> affected = detector.findAffectedNodes(network);
-        assertEquals(new HashSet<>(Arrays.asList("F2", "F3", "C3", "H1", "C4", "E1")),
-                nodeIds(affected), "isolated branches after L2 and L3 failures");
-        assertEquals(new HashSet<>(Arrays.asList("C3", "H1", "C4", "E1")),
+        assertEquals(new HashSet<>(Arrays.asList(
+                        "F1", "F2", "C1", "C2", "C6", "C7",
+                        "H1", "C3", "C8", "C9")),
+                nodeIds(affected), "isolated branches after L1 and L2 failures");
+        assertEquals(new HashSet<>(Arrays.asList(
+                        "C1", "C2", "C6", "C7", "H1", "C3", "C8", "C9")),
                 consumerIds(affected), "disconnected consumers after multiple failures");
 
+        network.getLine("L1").restoreLine();
         network.getLine("L2").restoreLine();
-        network.getLine("L3").restoreLine();
         network.getNode("S1").setPowered(false);
         affected = detector.findAffectedNodes(network);
         assertTrue(affected.contains(network.getNode("S1")),
@@ -87,9 +115,9 @@ public class Phase1StabilizationTest {
         assertTrue(!affected.contains(network.getNode("S2")),
                 "the remaining active substation should remain reachable");
         assertTrue(network.getNode("C4").isPowered(),
-                "branch connected to the remaining active substation");
+                "south branch remains connected to its active substation");
         assertTrue(!network.getNode("C1").isPowered(),
-                "branch disconnected from the remaining active substation");
+                "north branch is disconnected from its offline substation");
     }
 
     private void testLineRestoration() {
@@ -97,7 +125,8 @@ public class Phase1StabilizationTest {
         NetworkLine line = network.getLine("L7");
         line.failLine();
         List<NetworkNode> affectedBeforeRestore = detector.findAffectedNodes(network);
-        assertEquals(Collections.singleton("H1"), consumerIds(affectedBeforeRestore),
+        assertEquals(Collections.singleton("H1"),
+                consumerIds(affectedBeforeRestore),
                 "affected consumers before restoration");
 
         FaultReport report = new FaultReport(line, affectedBeforeRestore);
@@ -117,6 +146,26 @@ public class Phase1StabilizationTest {
         backup.restoreLine();
         assertEquals(LineStatus.STANDBY, backup.getStatus(),
                 "restoring a backup should return it to standby");
+    }
+
+    private static int primaryLineCount(DistributionNetwork network) {
+        int count = 0;
+        for (NetworkLine line : network.getLines()) {
+            if (!line.isBackupLink()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int backupLineCount(DistributionNetwork network) {
+        int count = 0;
+        for (NetworkLine line : network.getLines()) {
+            if (line.isBackupLink()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static Set<String> nodeIds(List<NetworkNode> nodes) {

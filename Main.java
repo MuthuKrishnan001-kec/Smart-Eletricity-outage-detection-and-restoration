@@ -7,7 +7,7 @@ public class Main {
     private final DistributionNetwork network =
             DistributionNetwork.createDemonstrationNetwork();
     private final OutageDetector outageDetector = new OutageDetector();
-    private final SensorMonitor sensorMonitor = createSensorMonitor();
+    private SensorMonitor sensorMonitor = createSensorMonitor();
     private final RestorationPolicy restorationPolicy = new RestorationPolicy();
     private List<NetworkNode> lastAffectedNodes = new ArrayList<>();
     private NetworkLine lastFailedLine;
@@ -20,7 +20,8 @@ public class Main {
         System.out.println("===============================================");
         System.out.println("     SMART ELECTRICITY OUTAGE DETECTION");
         System.out.println("===============================================");
-        System.out.println("13 nodes | 14 lines | Simulated sensor readings");
+        System.out.println(network.getNodes().size() + " nodes | "
+                + network.getLines().size() + " lines | Simulated city grid");
 
         Scanner scanner = new Scanner(System.in);
         while (true) {
@@ -37,7 +38,7 @@ public class Main {
                     simulateManualFault(scanner);
                     break;
                 case "3":
-                    runSensorDetection();
+                    runSensorDetection(scanner);
                     break;
                 case "4":
                     displayAffectedNodes();
@@ -61,7 +62,7 @@ public class Main {
         System.out.println();
         System.out.println("1. Display Network");
         System.out.println("2. Manual Line Fault");
-        System.out.println("3. Automatic Sensor Fault Detection");
+        System.out.println("3. Simulate City Event and Run Sensor Detection");
         System.out.println("4. Display Affected Nodes");
         System.out.println("5. Restore Network");
         System.out.println("6. Reset Network");
@@ -106,7 +107,40 @@ public class Main {
         processFault(line, "Manual fault selected by user");
     }
 
-    private void runSensorDetection() {
+    private void runSensorDetection(Scanner scanner) {
+        System.out.println("\nSelect a city event:");
+        System.out.println("1. Storm (2-3 residential line tears)");
+        System.out.println("2. Peak Load Overload (industrial/commercial safety trip)");
+        System.out.println("3. Random Aging Fault (170 V brownout)");
+        System.out.print("Enter event type: ");
+        if (!scanner.hasNextLine()) {
+            return;
+        }
+        String eventType;
+        switch (scanner.nextLine().trim()) {
+            case "1":
+                eventType = "Storm";
+                break;
+            case "2":
+                eventType = "Peak Load Overload";
+                break;
+            case "3":
+                eventType = "Random Aging Fault";
+                break;
+            default:
+                System.out.println("Invalid event type. No changes made.");
+                return;
+        }
+        List<NetworkLine> eventLines;
+        try {
+            eventLines = sensorMonitor.simulateCityEvent(eventType);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            System.out.println(exception.getMessage());
+            return;
+        }
+        System.out.println(eventType + " simulated on "
+                + eventLines.stream().map(NetworkLine::getId)
+                        .collect(java.util.stream.Collectors.joining(", ")));
         System.out.println("\n================ SENSOR MONITORING ================");
         System.out.println("Simulated Sensor-Based Fault Detection");
         System.out.println("Line   Voltage   Current   Status");
@@ -140,12 +174,13 @@ public class Main {
             if (reading != null) {
                 System.out.printf("Normal Voltage  : %.0f V%n", reading.getNormalVoltage());
                 System.out.printf("Observed Voltage: %.0f V%n", reading.getObservedVoltage());
-                System.out.println("Voltage fault: "
-                        + sensorMonitor.isVoltageFault(reading));
+                System.out.println("Observed Current: " + reading.getObservedCurrent() + " A");
+                System.out.println("Anomaly reasons  : "
+                        + String.join(", ", sensorMonitor.getAbnormalReasons(reading)));
             }
             FaultReport report = new FaultReport(
                     line, orderAffectedNodes(line, diagnostics.getAffectedNodes()));
-            restorationPolicy.submitFault(report);
+            restorationPolicy.submitFault(report, network);
             lastFailedLine = line;
             displayFaultReport(report);
             System.out.println("Fault added to restoration PriorityQueue.");
@@ -166,7 +201,7 @@ public class Main {
         lastAffectedNodes = outageDetector.findAffectedNodes(network);
 
         FaultReport report = new FaultReport(line, orderAffectedNodes(line, lastAffectedNodes));
-        restorationPolicy.submitFault(report);
+        restorationPolicy.submitFault(report, network);
         displayFaultReport(report);
         System.out.println("Fault added to restoration PriorityQueue.");
         System.out.println("Select option 5 to start restoration.");
@@ -256,37 +291,16 @@ public class Main {
     private void resetNetwork() {
         network.reset();
         restorationPolicy.reset();
+        sensorMonitor = createSensorMonitor();
         lastAffectedNodes.clear();
         lastFailedLine = null;
         System.out.println("Network reset: normal lines WORKING, backup lines STANDBY.");
     }
 
     private SensorMonitor createSensorMonitor() {
-        SensorMonitor monitor = new SensorMonitor(20, 30);
+        SensorMonitor monitor = new SensorMonitor(20, 30, network);
         for (NetworkLine line : network.getLines()) {
-            double normalCurrent = 10;
-            double observedVoltage = 230;
-            double observedCurrent = normalCurrent;
-
-            if ("L1".equals(line.getId())) {
-                normalCurrent = 12;
-                observedVoltage = 229;
-                observedCurrent = 12;
-            } else if ("L2".equals(line.getId())) {
-                normalCurrent = 15;
-                observedVoltage = 45;
-                observedCurrent = 2;
-            } else if ("L3".equals(line.getId())) {
-                normalCurrent = 10;
-                observedVoltage = 228;
-            } else if ("L4".equals(line.getId())) {
-                normalCurrent = 11;
-                observedVoltage = 231;
-                observedCurrent = 11;
-            }
-
-            monitor.addReading(new SensorReading(
-                    line.getId(), 230, normalCurrent, observedVoltage, observedCurrent));
+            monitor.addReading(new SensorReading(line.getId(), 230, 10, 230, 10));
         }
         return monitor;
     }

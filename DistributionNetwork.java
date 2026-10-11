@@ -107,9 +107,16 @@ public class DistributionNetwork {
         network.addNode(new GeneralArea("C3", "Hilltop", true, 1));
         network.addNode(new GeneralArea("C4", "Riverside", true, 1));
         network.addNode(new GeneralArea("C5", "Sunrise Colony", true, 1));
+        network.addNode(new GeneralArea("C6", "Westfield", true, 1));
+        network.addNode(new GeneralArea("C7", "Cedar Grove", true, 1));
+        network.addNode(new GeneralArea("C8", "Central Market", true, 1));
+        network.addNode(new GeneralArea("C9", "Oakwood", true, 1));
+        network.addNode(new GeneralArea("C10", "Maple Estate", true, 1));
+        network.addNode(new GeneralArea("C11", "East Park", true, 1));
         network.addNode(new Hospital("H1", "City General Hospital", true, 1));
         network.addNode(new EmergencyCentre(
                 "E1", "District Emergency Response Centre", true, 1));
+        network.addNode(new EmergencyCentre("E2", "Fire and Rescue Station", true, 1));
 
         network.addLine(new NetworkLine("L1", "S1", "F1", false, 25));
         network.addLine(new NetworkLine("L2", "S1", "F2", false, 40));
@@ -125,6 +132,13 @@ public class DistributionNetwork {
         network.addLine(new NetworkLine("L12", "F2", "S2", true, 15));
         network.addLine(new NetworkLine("L13", "F3", "S1", true, 15));
         network.addLine(new NetworkLine("L14", "F1", "F4", true, 15));
+        network.addLine(new NetworkLine("L15", "F1", "C6", false, 20));
+        network.addLine(new NetworkLine("L16", "F1", "C7", false, 20));
+        network.addLine(new NetworkLine("L17", "F2", "C8", false, 20));
+        network.addLine(new NetworkLine("L18", "F2", "C9", false, 20));
+        network.addLine(new NetworkLine("L19", "F3", "C10", false, 20));
+        network.addLine(new NetworkLine("L20", "F3", "E2", false, 35));
+        network.addLine(new NetworkLine("L21", "F4", "C11", false, 20));
 
         return network;
     }
