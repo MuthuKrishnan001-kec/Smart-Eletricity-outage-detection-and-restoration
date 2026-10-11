@@ -13,12 +13,16 @@ public class DistributionNetwork {
 
     public void addNode(NetworkNode node) {
         Objects.requireNonNull(node, "node");
-        if (nodesById.containsKey(node.getId())) {
-            throw new IllegalArgumentException("Duplicate node ID: " + node.getId());
+        String nodeId = Objects.requireNonNull(node.getId(), "node ID");
+        if (nodeId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Node ID must not be empty.");
         }
-        nodesById.put(node.getId(), node);
+        if (nodesById.containsKey(nodeId)) {
+            throw new IllegalArgumentException("Duplicate node ID: " + nodeId);
+        }
+        nodesById.put(nodeId, node);
         nodes.add(node);
-        adjacency.put(node.getId(), new ArrayList<>());
+        adjacency.put(nodeId, new ArrayList<>());
     }
 
     public void addLine(NetworkLine line) {
@@ -59,6 +63,8 @@ public class DistributionNetwork {
     }
 
     public String getOtherNodeId(NetworkLine line, String nodeId) {
+        Objects.requireNonNull(line, "line");
+        Objects.requireNonNull(nodeId, "nodeId");
         if (line.getFromNodeId().equals(nodeId)) {
             return line.getToNodeId();
         }
@@ -80,7 +86,7 @@ public class DistributionNetwork {
 
     public void reset() {
         for (NetworkLine line : lines) {
-            line.repair();
+            line.restoreLine();
         }
         for (NetworkNode node : nodes) {
             node.setPowered(true);

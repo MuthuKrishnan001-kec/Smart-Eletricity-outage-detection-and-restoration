@@ -1,3 +1,5 @@
+import java.util.Objects;
+
 public class NetworkLine {
     private final String id;
     private final String fromNodeId;
@@ -8,12 +10,26 @@ public class NetworkLine {
 
     public NetworkLine(String id, String fromNodeId, String toNodeId,
                        boolean backupLink, int repairTimeMinutes) {
-        this.id = id;
-        this.fromNodeId = fromNodeId;
-        this.toNodeId = toNodeId;
+        this.id = requireIdentifier(id, "id");
+        this.fromNodeId = requireIdentifier(fromNodeId, "fromNodeId");
+        this.toNodeId = requireIdentifier(toNodeId, "toNodeId");
+        if (fromNodeId.equals(toNodeId)) {
+            throw new IllegalArgumentException("A line must connect two different nodes.");
+        }
+        if (repairTimeMinutes < 0) {
+            throw new IllegalArgumentException("repairTimeMinutes must not be negative.");
+        }
         this.backupLink = backupLink;
         this.repairTimeMinutes = repairTimeMinutes;
         this.status = backupLink ? LineStatus.STANDBY : LineStatus.WORKING;
+    }
+
+    private static String requireIdentifier(String value, String name) {
+        Objects.requireNonNull(value, name);
+        if (value.trim().isEmpty()) {
+            throw new IllegalArgumentException(name + " must not be empty.");
+        }
+        return value;
     }
 
     public String getId() {
@@ -40,12 +56,20 @@ public class NetworkLine {
         return repairTimeMinutes;
     }
 
-    public void fail() {
+    public void failLine() {
         status = LineStatus.FAILED;
     }
 
-    public void repair() {
+    public void fail() {
+        failLine();
+    }
+
+    public void restoreLine() {
         status = backupLink ? LineStatus.STANDBY : LineStatus.WORKING;
+    }
+
+    public void repair() {
+        restoreLine();
     }
 
     public void activateBackup() {

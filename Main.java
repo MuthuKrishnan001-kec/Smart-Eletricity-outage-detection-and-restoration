@@ -2,7 +2,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
-import java.util.Set;
 
 public class Main {
     private final DistributionNetwork network =
@@ -124,29 +123,34 @@ public class Main {
                     sensorMonitor.isAbnormal(reading) ? "ABNORMAL" : "NORMAL");
         }
 
-        List<NetworkLine> suspiciousLines =
-                sensorMonitor.findSuspiciousLines(network.getLines());
-        if (suspiciousLines.isEmpty()) {
-            System.out.println("No suspicious readings detected on working lines.");
+        OutageDiagnostics diagnostics = outageDetector.detectFaults(network, sensorMonitor);
+        if (diagnostics.getFaultedLines().isEmpty()) {
+            System.out.println("No failed lines or voltage faults detected.");
             return;
         }
 
         System.out.println("\n============= AUTOMATIC FAULT DETECTION =============");
-        for (NetworkLine line : suspiciousLines) {
-            SensorReading reading = sensorMonitor.getReading(line.getId());
-            System.out.println("Abnormal reading detected on " + line.getId());
-            System.out.printf("Normal Voltage  : %.0f V%n", reading.getNormalVoltage());
-            System.out.printf("Observed Voltage: %.0f V%n", reading.getObservedVoltage());
-            System.out.printf("Normal Current  : %.0f A%n", reading.getNormalCurrent());
-            System.out.printf("Observed Current: %.0f A%n", reading.getObservedCurrent());
-            System.out.println("Reason:");
-            for (String reason : sensorMonitor.getAbnormalReasons(reading)) {
-                System.out.println("- " + reason);
+        for (NetworkLine line : diagnostics.getFaultedLines()) {
+            if (restorationPolicy.isPendingFault(line)) {
+                continue;
             }
-            System.out.println("SUSPECTED FAULT: " + line.getId()
-                    + " (simulated indicator, not proof of a physical fault)");
-            processFault(line, "Simulated sensor-based anomaly");
+            SensorReading reading = sensorMonitor.getReading(line.getId());
+            System.out.println("Fault detected on " + line.getId()
+                    + " (status: " + line.getStatus() + ")");
+            if (reading != null) {
+                System.out.printf("Normal Voltage  : %.0f V%n", reading.getNormalVoltage());
+                System.out.printf("Observed Voltage: %.0f V%n", reading.getObservedVoltage());
+                System.out.println("Voltage fault: "
+                        + sensorMonitor.isVoltageFault(reading));
+            }
+            FaultReport report = new FaultReport(
+                    line, orderAffectedNodes(line, diagnostics.getAffectedNodes()));
+            restorationPolicy.submitFault(report);
+            lastFailedLine = line;
+            displayFaultReport(report);
+            System.out.println("Fault added to restoration PriorityQueue.");
         }
+        lastAffectedNodes = new ArrayList<>(diagnostics.getAffectedNodes());
     }
 
     private void processFault(NetworkLine line, String faultSource) {
@@ -155,17 +159,11 @@ public class Main {
             return;
         }
 
-        line.fail();
+        line.failLine();
         lastFailedLine = line;
         System.out.println(faultSource + ": " + line.getId() + " marked FAILED.");
 
-        Set<NetworkNode> reachable = outageDetector.findReachableNodes(network);
-        lastAffectedNodes = new ArrayList<>();
-        for (NetworkNode node : network.getNodes()) {
-            if (!reachable.contains(node)) {
-                lastAffectedNodes.add(node);
-            }
-        }
+        lastAffectedNodes = outageDetector.findAffectedNodes(network);
 
         FaultReport report = new FaultReport(line, orderAffectedNodes(line, lastAffectedNodes));
         restorationPolicy.submitFault(report);

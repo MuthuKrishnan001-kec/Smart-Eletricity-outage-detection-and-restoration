@@ -23,6 +23,11 @@ The demo network includes:
 ### 2. Outage Detection Logic
 A reachability-based outage detection system is implemented in [OutageDetector.java](OutageDetector.java). It performs a breadth-first traversal from powered substations and marks all nodes that are disconnected from the source as affected.
 
+Calling `findAffectedNodes` also updates the powered flag of each feeder and consumer
+to reflect the current BFS result. Substation powered flags remain the configured
+source availability, so an offline substation is not accidentally re-enabled by
+outage detection. Standby backup links are excluded from reachability until activated.
+
 This logic is used to:
 - identify affected nodes after a line fails
 - rank outage impact
@@ -36,6 +41,8 @@ Current features include:
 - abnormal reading detection using threshold percentages
 - explanation of abnormal readings (voltage drop or current deviation)
 - suspicious line detection across the network
+- automatic line failure when a working line's sensor reading exceeds the configured voltage-drop threshold
+- outage diagnostics that separate disconnected consumer areas and affected hospitals/emergency centres
 
 The simulation currently uses threshold values of:
 - voltage drop threshold: 20%
@@ -49,18 +56,20 @@ It records:
 - list of affected nodes
 - priority score based on consumer impact
 - assigned repair team
+- estimated repair duration, including line repair and depot-to-fault travel time
 - restoration status
 
-Priority is influenced by consumer area severity and critical infrastructure importance.
+The restoration queue ranks critical facilities first, then affected consumer count, then report order.
+Priority changes remove and reinsert queued reports so the heap remains correctly ordered.
 
 ### 5. Restoration Workflow
 Restoration logic is implemented in [RestorationPolicy.java](RestorationPolicy.java). The current workflow includes:
-- fault queue management using priority ordering
-- repair team assignment
-- backup-path search for affected nodes
+- deterministic priority queue management and available repair-team assignment
+- repair-time estimation from the failed line and the shortest depot route, using line repair-time values as travel time
+- candidate-plan search restricted to approved standby backup links
+- plan scoring using critical facilities restored, consumers restored, and estimated repair time
 - activation of standby backup links
-- temporary restoration assessment
-- final repair and verification of network reachability
+- BFS verification of backup-plan reachability and final repaired-grid connectivity
 
 ### 6. Interactive Console Application
 The project has an interactive menu-driven Java application in [Main.java](Main.java). It supports:
@@ -86,7 +95,10 @@ The project is currently functioning as a working prototype and simulation envir
 
 ## Limitations / Areas for Improvement
 - There is no persisted database or external data source yet
-- No formal test suite has been created for validation
+- A standalone `Phase1StabilizationTest.java` verification runner covers baseline
+  reachability, single and multiple line failures, and restoration.
+  Run it from the project root with `javac *.java` followed by
+  `java Phase1StabilizationTest`.
 - No GUI or web interface is present yet
 - The network is static and predefined rather than configurable from input files
 - Some restoration logic would benefit from more extensive validation under multiple outage scenarios

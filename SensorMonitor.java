@@ -1,9 +1,11 @@
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public class SensorMonitor {
     private final Map<String, SensorReading> readings = new HashMap<>();
@@ -34,6 +36,10 @@ public class SensorMonitor {
                 voltageDropThresholdPercent, currentDeviationThresholdPercent);
     }
 
+    public boolean isVoltageFault(SensorReading reading) {
+        return reading.isVoltageAbnormal(voltageDropThresholdPercent);
+    }
+
     public List<String> getAbnormalReasons(SensorReading reading) {
         return reading.getAbnormalReasons(
                 voltageDropThresholdPercent, currentDeviationThresholdPercent);
@@ -48,5 +54,22 @@ public class SensorMonitor {
             }
         }
         return suspiciousLines;
+    }
+
+    public Set<NetworkLine> findFaultedLines(Collection<NetworkLine> lines) {
+        Set<NetworkLine> faultedLines = new LinkedHashSet<>();
+        for (NetworkLine line : lines) {
+            if (line.getStatus() == LineStatus.FAILED) {
+                faultedLines.add(line);
+                continue;
+            }
+
+            SensorReading reading = readings.get(line.getId());
+            if (line.isWorking() && reading != null && isVoltageFault(reading)) {
+                line.failLine();
+                faultedLines.add(line);
+            }
+        }
+        return faultedLines;
     }
 }

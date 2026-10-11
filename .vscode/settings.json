@@ -1,0 +1,12 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^git status --short --untracked-files=all; Get-ChildItem -Name \\*\\.java \\| ForEach-Object \\{ \\$_ \\};$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^javac \\*\\.java; if \\(\\$\\?\\) \\{ java Phase1StabilizationTest \\}$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
