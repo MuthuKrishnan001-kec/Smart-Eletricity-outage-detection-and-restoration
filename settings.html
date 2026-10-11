@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Settings panel for SmartGrid Monitor." />
+    <title>SmartGrid Monitor | Settings</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div class="brand-text">SmartGrid Monitor</div>
+        </div>
+
+        <nav class="nav" aria-label="Sidebar navigation">
+          <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
+          <a class="nav-item" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
+          <a class="nav-item" href="outages.html"><span class="nav-icon">⚠</span> Outage Monitoring</a>
+          <a class="nav-item" href="teams.html"><span class="nav-icon">👥</span> Repair Teams</a>
+          <a class="nav-item" href="analytics.html"><span class="nav-icon">▤</span> Analytics &amp; Graphs</a>
+          <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
+          <a class="nav-item active" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
+        </nav>
+
+        <div class="sidebar-footer">Static configuration reference</div>
+      </aside>
+
+      <div class="main-panel">
+        <header class="topbar">
+          <div class="page-heading">
+            <h1>Settings</h1>
+          </div>
+          <div class="topbar-meta">
+            <span class="status-pill"><span class="status-dot"></span> Default profile</span>
+            <a class="header-action" href="settings.html">Refresh</a>
+          </div>
+        </header>
+
+        <main class="content">
+          <div class="settings-grid">
+            <article class="card setting-card">
+              <h2 class="panel-title">System configuration</h2>
+              <ul class="setting-list">
+                <li><span>Fault detection mode</span><strong>Automatic</strong></li>
+                <li><span>Priority threshold</span><strong>High</strong></li>
+                <li><span>Backup activation</span><strong>Enabled</strong></li>
+                <li><span>Repair dispatch</span><strong>Queue-based</strong></li>
+              </ul>
+            </article>
+
+            <article class="card setting-card">
+              <h2 class="panel-title">Operator profile</h2>
+              <ul class="setting-list">
+                <li><span>Role</span><strong>Control center</strong></li>
+                <li><span>Region</span><strong>North / South</strong></li>
+                <li><span>Notification</span><strong>Email + SMS</strong></li>
+                <li><span>Preferred view</span><strong>Operations dashboard</strong></li>
+              </ul>
+            </article>
+
+            <article class="card setting-card">
+              <h2 class="panel-title">Static notes</h2>
+              <ul class="setting-list">
+                <li><span>Frontend</span><strong>HTML + CSS only</strong></li>
+                <li><span>Runtime logic</span><strong>Java backend</strong></li>
+                <li><span>Live data</span><strong>Not simulated here</strong></li>
+                <li><span>Design style</span><strong>Operational monitor</strong></li>
+              </ul>
+            </article>
+          </div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

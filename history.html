@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Service and event history for SmartGrid Monitor." />
+    <title>SmartGrid Monitor | History</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div class="brand-text">SmartGrid Monitor</div>
+        </div>
+
+        <nav class="nav" aria-label="Sidebar navigation">
+          <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
+          <a class="nav-item" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
+          <a class="nav-item" href="outages.html"><span class="nav-icon">⚠</span> Outage Monitoring</a>
+          <a class="nav-item" href="teams.html"><span class="nav-icon">👥</span> Repair Teams</a>
+          <a class="nav-item" href="analytics.html"><span class="nav-icon">▤</span> Analytics &amp; Graphs</a>
+          <a class="nav-item active" href="history.html"><span class="nav-icon">◫</span> History</a>
+          <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
+        </nav>
+
+        <div class="sidebar-footer">Static event log</div>
+      </aside>
+
+      <div class="main-panel">
+        <header class="topbar">
+          <div class="page-heading">
+            <h1>History</h1>
+          </div>
+          <div class="topbar-meta">
+            <span class="status-pill"><span class="status-dot"></span> Event stream</span>
+            <a class="header-action" href="history.html">Refresh</a>
+          </div>
+        </header>
+
+        <main class="content">
+          <article class="card panel">
+            <div class="panel-header">
+              <h2 class="panel-title">Recent system events</h2>
+              <span class="muted">Last 7 recorded actions</span>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Event</th>
+                    <th>Source</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>08:42</td>
+                    <td>Sensor monitor flagged line L7 degradation</td>
+                    <td>SensorMonitor</td>
+                    <td><span class="status-label status-critical">Escalated</span></td>
+                  </tr>
+                  <tr>
+                    <td>08:45</td>
+                    <td>RT2 assigned to fault L7</td>
+                    <td>RestorationPolicy</td>
+                    <td><span class="status-label status-dispatched">Dispatched</span></td>
+                  </tr>
+                  <tr>
+                    <td>08:48</td>
+                    <td>Backup route review for feeder F2</td>
+                    <td>DistributionNetwork</td>
+                    <td><span class="status-label status-watch">Queued</span></td>
+                  </tr>
+                  <tr>
+                    <td>09:10</td>
+                    <td>Hospital H1 marked as priority site</td>
+                    <td>FaultReport</td>
+                    <td><span class="status-label status-critical">Critical</span></td>
+                  </tr>
+                  <tr>
+                    <td>09:18</td>
+                    <td>Manual reset completed</td>
+                    <td>Main</td>
+                    <td><span class="status-label status-available">Cleared</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>
