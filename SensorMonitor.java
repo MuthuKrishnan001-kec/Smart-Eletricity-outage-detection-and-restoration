@@ -3,6 +3,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public class SensorMonitor {
     private final Map<String, SensorReading> readings = new HashMap<>();
@@ -20,22 +21,32 @@ public class SensorMonitor {
     }
 
     public void addReading(SensorReading reading) {
+        Objects.requireNonNull(reading, "reading");
         readings.put(reading.getLineId(), reading);
     }
 
-    public List<NetworkLine> detectAndFailSuspiciousLines(
-            Collection<NetworkLine> lines) {
-        List<NetworkLine> suspectedLines = new ArrayList<>();
+    public SensorReading getReading(String lineId) {
+        return readings.get(lineId);
+    }
 
+    public boolean isAbnormal(SensorReading reading) {
+        return reading.isAbnormal(
+                voltageDropThresholdPercent, currentDeviationThresholdPercent);
+    }
+
+    public List<String> getAbnormalReasons(SensorReading reading) {
+        return reading.getAbnormalReasons(
+                voltageDropThresholdPercent, currentDeviationThresholdPercent);
+    }
+
+    public List<NetworkLine> findSuspiciousLines(Collection<NetworkLine> lines) {
+        List<NetworkLine> suspiciousLines = new ArrayList<>();
         for (NetworkLine line : lines) {
             SensorReading reading = readings.get(line.getId());
-            if (reading != null && reading.isAbnormal(
-                    voltageDropThresholdPercent, currentDeviationThresholdPercent)) {
-                line.fail();
-                suspectedLines.add(line);
+            if (line.isWorking() && reading != null && isAbnormal(reading)) {
+                suspiciousLines.add(line);
             }
         }
-
-        return suspectedLines;
+        return suspiciousLines;
     }
 }

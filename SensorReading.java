@@ -1,3 +1,7 @@
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
 public class SensorReading {
     private final String lineId;
     private final double normalVoltage;
@@ -7,7 +11,11 @@ public class SensorReading {
 
     public SensorReading(String lineId, double normalVoltage, double normalCurrent,
                          double observedVoltage, double observedCurrent) {
-        this.lineId = lineId;
+        this.lineId = Objects.requireNonNull(lineId, "lineId");
+        if (normalVoltage <= 0 || normalCurrent <= 0
+                || observedVoltage < 0 || observedCurrent < 0) {
+            throw new IllegalArgumentException("Sensor measurements must be non-negative.");
+        }
         this.normalVoltage = normalVoltage;
         this.normalCurrent = normalCurrent;
         this.observedVoltage = observedVoltage;
@@ -49,11 +57,15 @@ public class SensorReading {
                 || isCurrentAbnormal(currentDeviationThresholdPercent);
     }
 
-    @Override
-    public String toString() {
-        return String.format(
-                "Line %s: normal %.1f V / %.1f A, observed %.1f V / %.1f A",
-                lineId, normalVoltage, normalCurrent, observedVoltage, observedCurrent
-        );
+    public List<String> getAbnormalReasons(double voltageDropThresholdPercent,
+                                           double currentDeviationThresholdPercent) {
+        List<String> reasons = new ArrayList<>();
+        if (isVoltageAbnormal(voltageDropThresholdPercent)) {
+            reasons.add("Voltage drop exceeded threshold");
+        }
+        if (isCurrentAbnormal(currentDeviationThresholdPercent)) {
+            reasons.add("Current deviation exceeded threshold");
+        }
+        return reasons;
     }
 }
