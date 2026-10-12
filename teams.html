@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Repair team availability view for SmartGrid Monitor." />
+    <meta name="description" content="Live repair team status for SmartGrid Monitor." />
     <title>SmartGrid Monitor | Repair Teams</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
@@ -14,7 +14,6 @@
           <div class="brand-mark" aria-hidden="true"></div>
           <div class="brand-text">SmartGrid Monitor</div>
         </div>
-
         <nav class="nav" aria-label="Sidebar navigation">
           <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
           <a class="nav-item" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
@@ -24,97 +23,42 @@
           <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
           <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
         </nav>
-
-        <div class="sidebar-footer">Static view from the Java restoration workflow</div>
+        <div class="sidebar-footer">Live Java restoration workflow</div>
       </aside>
 
       <div class="main-panel">
         <header class="topbar">
-          <div class="page-heading">
-            <h1>Repair Teams</h1>
-          </div>
+          <div class="page-heading"><h1>Repair Teams</h1></div>
           <div class="topbar-meta">
-            <span class="status-pill"><span class="status-dot"></span> 3 teams configured</span>
+            <span class="status-pill" data-api-status role="status">Connecting…</span>
             <a class="header-action" href="teams.html">Refresh</a>
           </div>
         </header>
-
         <main class="content">
-          <div class="filter-row" aria-label="Team filters">
-            <span class="filter-chip active">All</span>
-            <span class="filter-chip">Available</span>
-            <span class="filter-chip">Dispatched</span>
-            <span class="filter-chip">Repairing</span>
-            <span class="filter-chip">Unavailable</span>
-          </div>
-
-          <div class="summary-box" style="margin-bottom: 20px;">
-            <div class="kpi-box">
-              <span class="muted">Available</span>
-              <strong>1</strong>
-            </div>
-            <div class="kpi-box">
-              <span class="muted">Busy</span>
-              <strong>2</strong>
-            </div>
-            <div class="kpi-box">
-              <span class="muted">Depot coverage</span>
-              <strong>North / South</strong>
-            </div>
-          </div>
-
           <article class="card panel">
+            <div class="panel-header">
+              <h2 class="panel-title">Repair team availability</h2>
+              <span class="muted">Assignment and estimated repair time</span>
+            </div>
             <div class="table-wrap">
-              <table class="table">
+              <table id="teamsTable" class="table">
                 <thead>
                   <tr>
-                    <th>Team</th>
+                    <th>Team ID</th>
+                    <th>Name</th>
                     <th>Depot</th>
                     <th>Status</th>
-                    <th>Assigned fault</th>
-                    <th>District</th>
-                    <th>Current task</th>
-                    <th>ETA / completion</th>
-                    <th>Last update</th>
+                    <th>Assigned Fault</th>
+                    <th>Estimated Repair Time</th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr>
-                    <td>RT1 • Alpha Crew</td>
-                    <td>North</td>
-                    <td><span class="status-label status-available">Available</span></td>
-                    <td>None</td>
-                    <td>North</td>
-                    <td>Monitoring</td>
-                    <td>Queued</td>
-                    <td>Just now</td>
-                  </tr>
-                  <tr>
-                    <td>RT2 • Bravo Crew</td>
-                    <td>South</td>
-                    <td><span class="status-label status-dispatched">Dispatched</span></td>
-                    <td>L7</td>
-                    <td>North</td>
-                    <td>Repairing line L7</td>
-                    <td>50 min</td>
-                    <td>2 mins ago</td>
-                  </tr>
-                  <tr>
-                    <td>RT3 • Charlie Crew</td>
-                    <td>North</td>
-                    <td><span class="status-label status-repairing">Repairing</span></td>
-                    <td>L1</td>
-                    <td>North</td>
-                    <td>Service restoration</td>
-                    <td>35 min</td>
-                    <td>4 mins ago</td>
-                  </tr>
-                </tbody>
+                <tbody></tbody>
               </table>
             </div>
           </article>
         </main>
       </div>
     </div>
+    <script src="app.js"></script>
   </body>
 </html>

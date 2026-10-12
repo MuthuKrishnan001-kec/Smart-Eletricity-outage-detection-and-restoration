@@ -1,164 +1,577 @@
-(function () {
-  const API_BASE = location.protocol === 'file:' ? 'http://localhost:8080' : '';
+const API_BASE = 'http://localhost:8081/api';
+let currentNetworkState = null;
+let currentEditNodeId = null;
 
-  function fetchJson(url) {
-    return fetch(url, {
-      headers: {
-        Accept: 'application/json'
-      }
-    }).then(async (response) => {
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(text || 'Request failed');
-      }
-      if (!text) {
-        return {};
-      }
+function requestJson(path, options) {
+  return fetch(`${API_BASE}${path}`, options).then(async (response) => {
+    const body = await response.text();
+    if (!response.ok) {
+      let message = body || `Request failed with status ${response.status}`;
       try {
-        return JSON.parse(text);
-      } catch (error) {
-        throw new Error('Failed to parse JSON from ' + url + ': ' + error.message);
+        const error = JSON.parse(body);
+        message = error.error || message;
+      } catch (parseError) {
+        // Preserve a plain-text server error.
       }
-    });
-  }
+      throw new Error(message);
+    }
+    return body ? JSON.parse(body) : {};
+  });
+}
 
-  function renderNetwork(payload) {
+function fetchOutages() {
+  return fetchOutageQueue();
+}
+
+function fetchNetworkState() {
+  return requestJson('/network').then((payload) => {
+    currentNetworkState = payload;
+    renderGridStatus(payload);
     const canvas = document.getElementById('networkCanvas');
     if (!canvas) {
-      return;
+      return payload;
     }
+    drawNetwork(canvas, payload);
+    return payload;
+  }).catch((error) => {
+    setGridStatus('Status unavailable', 'is-loading');
+    throw error;
+  });
+}
 
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function renderGridStatus(payload) {
+  const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+  const criticalFacilities = nodes.filter((node) =>
+    node.nodeType === 'Hospital' || node.nodeType === 'EmergencyCentre');
+  const failedLines = lines.filter((line) => line.status === 'FAILED');
+  const affectedCriticalFacilities = criticalFacilities.filter((facility) =>
+    !facility.powered);
 
-    const nodeMap = new Map();
-    for (const node of payload.nodes || []) {
-      nodeMap.set(node.id, node);
-    }
-
-    const points = new Map();
-    for (const node of payload.nodes || []) {
-      const x = Number(node.x ?? 60 + (Math.random() * 300));
-      const y = Number(node.y ?? 60 + (Math.random() * 300));
-      points.set(node.id, { x, y });
-    }
-
-    if (payload.lines && payload.lines.length > 0) {
-      for (const line of payload.lines) {
-        const from = points.get(line.from);
-        const to = points.get(line.to);
-        if (!from || !to) {
-          continue;
-        }
-
-        ctx.beginPath();
-        ctx.moveTo(from.x, from.y);
-        ctx.lineTo(to.x, to.y);
-        ctx.lineWidth = line.backup ? 2 : 4;
-        ctx.strokeStyle = line.status === 'FAILED' ? '#dc3d4b' : (line.backup ? '#4c7ae7' : '#5cb081');
-        ctx.setLineDash(line.backup ? [8, 8] : []);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-
-    for (const node of payload.nodes || []) {
-      const point = points.get(node.id);
-      if (!point) {
-        continue;
-      }
-
-      const radius = node.nodeType === 'Substation' ? 22 : node.nodeType === 'Feeder' ? 18 : 16;
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = node.nodeType === 'Substation'
-        ? '#dfeeff'
-        : node.nodeType === 'Feeder'
-          ? '#eafaf3'
-          : node.nodeType === 'Hospital' || node.nodeType === 'EmergencyCentre'
-            ? '#ffe7eb'
-            : '#fff0d9';
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = node.powered ? '#2364d2' : '#dc3d4b';
-      ctx.stroke();
-
-      ctx.fillStyle = '#1a2433';
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(node.id, point.x, point.y + 4);
-    }
-  }
-
-  function renderHistory(payload) {
-    const tableBody = document.querySelector('#historyTable tbody');
-    if (!tableBody) {
-      return;
-    }
-
-    tableBody.innerHTML = '';
-    for (const row of payload.history || []) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${row.timestamp || ''}</td>
-        <td>${row.eventType || ''}</td>
-        <td>${row.lineId || ''}</td>
-        <td>${row.affectedZones || ''}</td>
-        <td>${row.assignedTeam || ''}</td>
-        <td>${row.status || ''}</td>
-      `;
-      tableBody.appendChild(tr);
-    }
-  }
-
-  function renderTeams(payload) {
-    const tableBody = document.querySelector('#teamsTable tbody');
-    if (!tableBody) {
-      return;
-    }
-
-    tableBody.innerHTML = '';
-    for (const team of payload.teams || []) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${team.id || ''}</td>
-        <td>${team.name || ''}</td>
-        <td>${team.depot || ''}</td>
-        <td>${team.status || ''}</td>
-      `;
-      tableBody.appendChild(tr);
-    }
-  }
-
-  async function initDashboard() {
-    const urlConfig = {
-      network: `${API_BASE}/api/network`,
-      history: `${API_BASE}/api/history`,
-      teams: `${API_BASE}/api/teams`
-    };
-
-    try {
-      const [network, history, teams] = await Promise.all([
-        fetchJson(urlConfig.network),
-        fetchJson(urlConfig.history),
-        fetchJson(urlConfig.teams)
-      ]);
-
-      renderNetwork(network);
-      renderHistory(history);
-      renderTeams(teams);
-    } catch (error) {
-      console.error('Fetch failed', error);
-      const status = document.getElementById('statusText');
-      if (status) {
-        status.textContent = 'Unable to load live grid data from backend.';
-      }
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initDashboard);
+  if (affectedCriticalFacilities.length > 0) {
+    setGridStatus('Critical Impact', 'is-critical');
+  } else if (failedLines.length > 0 || nodes.some((node) => !node.powered)) {
+    setGridStatus('Outage Detected', 'is-outage');
   } else {
-    initDashboard();
+    setGridStatus('Grid Stable', 'is-stable');
   }
-})();
+}
+
+function setGridStatus(message, stateClass) {
+  const badge = document.querySelector('[data-grid-status]');
+  if (!badge) {
+    return;
+  }
+  badge.textContent = message;
+  badge.classList.remove('is-loading', 'is-stable', 'is-outage', 'is-critical');
+  badge.classList.add(stateClass);
+}
+
+function fetchOutageQueue() {
+  return requestJson('/outages').then((payload) => {
+    renderOutages(payload);
+    return payload;
+  });
+}
+
+function fetchRepairTeams() {
+  return requestJson('/teams').then((payload) => {
+    renderRepairTeams(payload);
+    return payload;
+  });
+}
+
+function fetchHistory() {
+  return requestJson('/history').then((payload) => {
+    renderHistory(payload);
+    return payload;
+  });
+}
+
+function drawNetwork(canvas, payload) {
+  const context = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  context.clearRect(0, 0, width, height);
+
+  const nodes = payload.nodes || [];
+  const points = getNetworkPoints(payload, width, height);
+
+  const lines = payload.lines || [];
+  for (const [index, line] of lines.entries()) {
+    const from = points.get(line.from);
+    const to = points.get(line.to);
+    if (!from || !to) {
+      continue;
+    }
+    const failed = line.status === 'FAILED';
+    const standby = !failed && line.status === 'STANDBY';
+    context.beginPath();
+    context.moveTo(from.x, from.y);
+    context.lineTo(to.x, to.y);
+    context.lineWidth = standby ? 3 : 4;
+    context.strokeStyle = failed ? '#dc3d4b' : standby ? '#2864d7' : '#23945e';
+    context.setLineDash(standby ? [9, 7] : []);
+    context.stroke();
+
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const offset = ((index % 3) - 1) * 9;
+    const labelX = (from.x + to.x) / 2 - (dy / length) * offset;
+    const labelY = (from.y + to.y) / 2 + (dx / length) * offset - 4;
+    context.setLineDash([]);
+    context.font = 'bold 11px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.lineWidth = 3;
+    context.strokeStyle = '#f8fbff';
+    context.strokeText(line.id, labelX, labelY);
+    context.fillStyle = '#304257';
+    context.fillText(line.id, labelX, labelY);
+  }
+  context.setLineDash([]);
+
+  for (const node of nodes) {
+    const point = points.get(node.id);
+    const powered = Boolean(node.powered);
+    const voltageAlert = Boolean(node.voltageAlert);
+    context.beginPath();
+    context.arc(point.x, point.y, node.nodeType === 'Substation' ? 22 : 17, 0, Math.PI * 2);
+    context.fillStyle = !powered ? '#dc3d4b' : voltageAlert ? '#d9931a' : '#34a66a';
+    context.fill();
+    context.lineWidth = 2;
+    context.strokeStyle = !powered ? '#a92635' : voltageAlert ? '#9d6810' : '#177344';
+    context.stroke();
+
+    context.fillStyle = '#fff';
+    context.font = 'bold 12px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(node.id, point.x, point.y);
+
+    const labelAlignment = point.x > width - 150
+      ? 'right'
+      : point.x < 150
+        ? 'left'
+        : 'center';
+    const labelX = labelAlignment === 'right'
+      ? point.x - 23
+      : labelAlignment === 'left'
+        ? point.x + 23
+        : point.x;
+    context.fillStyle = '#455468';
+    context.font = '12px sans-serif';
+    context.textAlign = labelAlignment;
+    context.textBaseline = 'top';
+    context.fillText(node.name || node.id, labelX, point.y + 21, 220);
+    context.fillText(powered ? 'POWERED' : 'AFFECTED', labelX, point.y + 36, 220);
+    if (node.voltageEdited) {
+      context.fillStyle = voltageAlert ? '#9d6810' : '#455468';
+      context.fillText(
+        `${voltageAlert ? 'LOW VOLTAGE · ' : ''}${node.observedVoltage} V`,
+        labelX,
+        point.y + 51,
+        220);
+    }
+  }
+
+  drawNetworkLegend(context);
+}
+
+function getNetworkPoints(payload, width, height) {
+  const points = new Map();
+  const nodes = payload.nodes || [];
+  const occupiedPoints = new Set();
+  for (const [index, node] of nodes.entries()) {
+    let x = Number(node.x);
+    let y = Number(node.y);
+    const key = `${x},${y}`;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || occupiedPoints.has(key)) {
+      const angle = (2 * Math.PI * index) / Math.max(nodes.length, 1);
+      x = width / 2 + Math.cos(angle) * width * 0.38;
+      y = height / 2 + Math.sin(angle) * height * 0.38;
+    }
+    occupiedPoints.add(`${x},${y}`);
+    points.set(node.id, { x, y });
+  }
+  return points;
+}
+
+function drawNetworkLegend(context) {
+  const items = [
+    { color: '#34a66a', label: 'Green Node = Powered', type: 'node' },
+    { color: '#d9931a', label: 'Amber Node = Low Voltage', type: 'node' },
+    { color: '#dc3d4b', label: 'Red Node = Affected', type: 'node' },
+    { color: '#23945e', label: 'Solid Line = Active', type: 'line' },
+    { color: '#2864d7', label: 'Dashed Blue = Backup', type: 'dashed' },
+    { color: '#dc3d4b', label: 'Red Line = Failed', type: 'line' }
+  ];
+  context.fillStyle = 'rgba(255, 255, 255, 0.96)';
+  context.strokeStyle = '#cbd6e2';
+  context.lineWidth = 1;
+  context.beginPath();
+  context.roundRect(12, 12, 205, 129, 8);
+  context.fill();
+  context.stroke();
+
+  for (const [index, item] of items.entries()) {
+    const y = 31 + index * 19;
+    context.strokeStyle = item.color;
+    context.fillStyle = item.color;
+    context.lineWidth = 3;
+    context.setLineDash(item.type === 'dashed' ? [5, 3] : []);
+    context.beginPath();
+    if (item.type === 'node') {
+      context.arc(27, y, 5, 0, Math.PI * 2);
+      context.fill();
+    } else {
+      context.moveTo(19, y);
+      context.lineTo(36, y);
+      context.stroke();
+    }
+    context.setLineDash([]);
+    context.fillStyle = '#394b60';
+    context.font = '12px sans-serif';
+    context.textAlign = 'left';
+    context.textBaseline = 'middle';
+    context.fillText(item.label, 43, y);
+  }
+}
+
+function findCanvasSelection(canvas, event) {
+  if (!currentNetworkState) {
+    return null;
+  }
+  const bounds = canvas.getBoundingClientRect();
+  const click = {
+    x: (event.clientX - bounds.left) * (canvas.width / bounds.width),
+    y: (event.clientY - bounds.top) * (canvas.height / bounds.height)
+  };
+  const points = getNetworkPoints(currentNetworkState, canvas.width, canvas.height);
+  let closestNode = null;
+  let closestNodeDistance = 15;
+  for (const node of currentNetworkState.nodes || []) {
+    const point = points.get(node.id);
+    const distance = Math.hypot(point.x - click.x, point.y - click.y);
+    if (distance <= closestNodeDistance) {
+      closestNode = node;
+      closestNodeDistance = distance;
+    }
+  }
+  if (closestNode) {
+    const incidentLines = (currentNetworkState.lines || [])
+      .filter((line) => line.from === closestNode.id || line.to === closestNode.id);
+    return incidentLines.length
+      ? { nodeId: closestNode.id, lines: incidentLines }
+      : null;
+  }
+
+  let closestLine = null;
+  let closestLineDistance = 15;
+  for (const line of currentNetworkState.lines || []) {
+    const from = points.get(line.from);
+    const to = points.get(line.to);
+    if (!from || !to) {
+      continue;
+    }
+    const distance = pointToSegmentDistance(click, from, to);
+    if (distance <= closestLineDistance) {
+      closestLine = line;
+      closestLineDistance = distance;
+    }
+  }
+  return closestLine ? { lines: [closestLine] } : null;
+}
+
+function pointToSegmentDistance(point, from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) {
+    return Math.hypot(point.x - from.x, point.y - from.y);
+  }
+  const projection = Math.max(0, Math.min(1,
+    ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared));
+  return Math.hypot(
+    point.x - (from.x + projection * dx),
+    point.y - (from.y + projection * dy));
+}
+
+function setEditLine(lineId) {
+  const line = (currentNetworkState?.lines || []).find((candidate) =>
+    candidate.id === lineId);
+  if (!line) {
+    return;
+  }
+  const statusSelect = document.getElementById('editStatus');
+  const standbyOption = statusSelect.querySelector('option[value="STANDBY"]');
+  standbyOption.disabled = !line.backup;
+  statusSelect.value = line.status === 'STANDBY' && !line.backup
+    ? 'WORKING'
+    : line.status;
+  document.getElementById('editVoltage').value = line.observedVoltage ?? 230;
+}
+
+function openEditModal(selection) {
+  const modal = document.getElementById('editModal');
+  const lineSelect = document.getElementById('editLineId');
+  const lineField = document.getElementById('incidentLineField');
+  const statusField = document.getElementById('editStatusField');
+  const nodeId = selection.nodeId;
+  currentEditNodeId = nodeId || null;
+  document.getElementById('editSelectionTitle').textContent = nodeId
+    ? `Selected Node ID: ${nodeId} · voltage change affects this node only`
+    : `Selected Line ID: ${selection.lines[0].id}`;
+  document.getElementById('editModalTitle').textContent = nodeId
+    ? `Edit Node Voltage — ${nodeId}`
+    : `Edit Network Status — ${selection.lines[0].id}`;
+
+  lineSelect.replaceChildren();
+  for (const line of selection.lines) {
+    const option = document.createElement('option');
+    option.value = line.id;
+    option.textContent = line.id;
+    lineSelect.appendChild(option);
+  }
+  lineField.hidden = Boolean(nodeId) || selection.lines.length < 2;
+  statusField.hidden = Boolean(nodeId);
+  lineSelect.value = selection.lines[0].id;
+  setEditLine(lineSelect.value);
+  if (nodeId) {
+    const node = (currentNetworkState?.nodes || []).find((item) => item.id === nodeId);
+    document.getElementById('editVoltage').value = node?.observedVoltage ?? 230;
+  }
+  document.getElementById('editError').textContent = '';
+  modal.hidden = false;
+  document.getElementById('editVoltage').focus();
+}
+
+function closeEditModal() {
+  const modal = document.getElementById('editModal');
+  if (modal) {
+    modal.hidden = true;
+  }
+}
+
+function applyManualEdit(event) {
+  event.preventDefault();
+  const lineId = document.getElementById('editLineId').value;
+  const voltage = Number(document.getElementById('editVoltage').value);
+  const status = document.getElementById('editStatus').value;
+  const error = document.getElementById('editError');
+  const applyButton = document.getElementById('applyEditButton');
+  if (!Number.isFinite(voltage) || voltage < 0 || voltage > 1000) {
+    error.textContent = 'Voltage must be between 0 and 1000 volts.';
+    return;
+  }
+  error.textContent = '';
+  applyButton.disabled = true;
+  const requestPath = currentEditNodeId ? '/node-voltage' : '/action';
+  const requestBody = currentEditNodeId
+    ? { nodeId: currentEditNodeId, newVoltage: voltage }
+    : { lineId, newVoltage: voltage, newStatus: status };
+  requestJson(requestPath, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  }).then(() => {
+    closeEditModal();
+    return Promise.all([
+      fetchNetworkState(),
+      fetchOutages(),
+      fetchRepairTeams(),
+      fetchHistory()
+    ]);
+  }).then(() => {
+    updateStatus('Manual update applied; live data refreshed.');
+  }).catch((requestError) => {
+    error.textContent = requestError.message;
+    updateStatus(`Manual update failed: ${requestError.message}`);
+  }).finally(() => {
+    applyButton.disabled = false;
+  });
+}
+
+function initializeCanvasEditing() {
+  const canvas = document.getElementById('networkCanvas');
+  const modal = document.getElementById('editModal');
+  if (!canvas || !modal) {
+    return;
+  }
+  canvas.addEventListener('click', (event) => {
+    const selection = findCanvasSelection(canvas, event);
+    if (selection) {
+      openEditModal(selection);
+    }
+  });
+  document.getElementById('editLineId').addEventListener('change', (event) => {
+    setEditLine(event.target.value);
+  });
+  document.getElementById('editForm').addEventListener('submit', applyManualEdit);
+  modal.querySelectorAll('[data-modal-cancel]').forEach((button) => {
+    button.addEventListener('click', closeEditModal);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) {
+      closeEditModal();
+    }
+  });
+}
+
+function appendCell(row, value) {
+  const cell = document.createElement('td');
+  cell.textContent = value == null || value === '' ? '—' : String(value);
+  row.appendChild(cell);
+}
+
+function renderOutages(payload) {
+  const body = document.querySelector('#outagesTable tbody');
+  if (!body) {
+    return;
+  }
+  body.replaceChildren();
+  for (const outage of payload.outages || []) {
+    const row = document.createElement('tr');
+    appendCell(row, outage.faultId);
+    appendPriorityCell(row, outage.priorityScore);
+    appendCell(row, (outage.affectedNodes || []).map((node) =>
+      typeof node === 'string' ? node : `${node.id} (${node.name})`).join(', '));
+    appendCell(row, outage.assignedTeam
+      ? `${outage.assignedTeam.id} • ${outage.assignedTeam.name}`
+      : 'Unassigned');
+    body.appendChild(row);
+  }
+}
+
+function appendPriorityCell(row, priorityScore) {
+  const cell = document.createElement('td');
+  const score = document.createElement('span');
+  score.className = 'priority-score';
+  score.textContent = Number.isFinite(priorityScore)
+    ? `${priorityScore} pts`
+    : '—';
+  cell.appendChild(score);
+  row.appendChild(cell);
+}
+
+function renderRepairTeams(payload) {
+  const body = document.querySelector('#teamsTable tbody');
+  if (!body) {
+    return;
+  }
+  body.replaceChildren();
+  for (const team of payload.teams || []) {
+    const row = document.createElement('tr');
+    appendCell(row, team.id);
+    appendCell(row, team.name);
+    appendCell(row, team.depot);
+    appendCell(row, team.status);
+    appendCell(row, team.assignedFault);
+    appendCell(row, team.estimatedRepairMinutes == null
+      ? '—'
+      : `${team.estimatedRepairMinutes} min`);
+    body.appendChild(row);
+  }
+}
+
+function renderHistory(payload) {
+  const body = document.querySelector('#historyTable tbody');
+  if (!body) {
+    return;
+  }
+  body.replaceChildren();
+  for (const event of payload.history || []) {
+    const row = document.createElement('tr');
+    appendCell(row, event.timestamp);
+    appendCell(row, event.eventType);
+    appendCell(row, event.lineId);
+    appendCell(row, event.affectedZones);
+    appendCell(row, event.assignedTeam);
+    appendCell(row, event.status);
+    body.appendChild(row);
+  }
+}
+
+function refreshLiveData() {
+  return Promise.all([
+    fetchNetworkState(),
+    fetchOutageQueue(),
+    fetchRepairTeams(),
+    fetchHistory()
+  ]);
+}
+
+function updateStatus(message) {
+  for (const status of document.querySelectorAll('[data-api-status]')) {
+    status.textContent = message;
+  }
+}
+
+function postAction(path, body) {
+  return requestJson(path, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body || {})
+  }).then((result) => {
+    return Promise.all([
+      fetchNetworkState(),
+      fetchOutageQueue(),
+      fetchRepairTeams(),
+      fetchHistory()
+    ]).then(() => result);
+  });
+}
+
+function autoDetect() {
+  const eventTypes = ['Storm', 'Peak Load Overload', 'Random Aging Fault'];
+  const eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+  console.log('Auto Detect selected event:', eventType);
+  return postAction('/actions/simulate-fault', { eventType });
+}
+
+function runFrontendAction(action) {
+  const operations = {
+    autoDetect,
+    restore: () => postAction('/actions/auto-restore'),
+    reset: () => postAction('/actions/reset')
+  };
+  const operation = operations[action];
+  if (!operation) {
+    return;
+  }
+  updateStatus('Working…');
+  operation()
+    .then(() => updateStatus('Live data refreshed.'))
+    .catch((error) => {
+      console.error('Grid operation failed:', error);
+      updateStatus(`Operation failed: ${error.message}`);
+    });
+}
+
+function initializeLivePages() {
+  initializeCanvasEditing();
+  document.querySelectorAll('[data-grid-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      runFrontendAction(button.dataset.gridAction);
+    });
+  });
+  refreshLiveData()
+    .then(() => updateStatus('Connected to live Java API.'))
+    .catch((error) => {
+      console.error('Unable to load live grid data:', error);
+      updateStatus(`Unable to load live data: ${error.message}`);
+    });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeLivePages);
+} else {
+  initializeLivePages();
+}

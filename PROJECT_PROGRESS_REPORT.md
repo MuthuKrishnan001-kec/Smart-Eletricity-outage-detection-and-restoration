@@ -1,7 +1,24 @@
 # Smart Electricity Outage Detection and Restoration – Progress Report
-   
+
+## Current Stage
+The project is at an integrated prototype stage and is being prepared for the
+Review 2 evaluation. The Java simulation, Swing interface, HTTP API, and browser
+dashboard are implemented. The browser dashboard presents live network state,
+grid operations, an outage queue, repair teams, and recent events. Its summary
+metric cards have been removed to keep the dashboard focused on the live
+network and operational views.
+
+The core workflow is demonstrable end to end: simulate or edit a fault, detect
+affected nodes, queue and prioritize repairs, use standby links where possible,
+dispatch repair teams, restore service, and record history. This is an
+evaluation-ready local prototype, not a production utility control system.
+
 ## Project Overview
-This project is a Java-based simulation of a smart electricity distribution network designed to detect outages, calculate their impact, and restore service using standby ring backups and geographically dispatched repair teams. The city-scale demonstration models three urban districts, substations, feeders, consumer zones, and critical facilities.
+This project is a Java-based simulation of a smart electricity distribution
+network designed to detect outages, calculate their impact, and restore service
+using standby ring backups and geographically dispatched repair teams. It
+includes both a desktop Swing interface and a browser dashboard backed by an
+HTTP API.
 
 ## What Has Been Implemented So Far
 
@@ -10,13 +27,16 @@ A working network model has been built with the following classes:
 - [DistributionNetwork.java](DistributionNetwork.java): creates and manages the network graph, nodes, and lines.
 - [NetworkNode.java](NetworkNode.java): abstract base class for all network entities.
 - [NetworkLine.java](NetworkLine.java): models line status, failure, repair, and backup-link behavior.
-- [Substation.java](Substation.java), [Feeder.java](Feeder.java), [ZonedArea.java](ZonedArea.java), and [CriticalFacility.java](CriticalFacility.java): represent the network components, including city districts and weighted consumer zones.
+- [Substation.java](Substation.java), [Feeder.java](Feeder.java),
+  [GeneralArea.java](GeneralArea.java), [Hospital.java](Hospital.java), and
+  [EmergencyCentre.java](EmergencyCentre.java): represent substations, feeders,
+  consumer areas, and critical facilities.
 
 The demo network includes:
-- 3 substations, 9 feeders, 14 consumer areas, and 4 critical facilities
-- 30 total nodes connected by 27 radial primary lines and 8 standby ring links
+- 2 substations, 4 feeders, 11 consumer areas, and 3 critical facilities
+- 20 total nodes connected by 18 primary lines and 3 standby backup links
 - industrial, commercial, and residential consumer zones with priority weights of 50, 30, and 10
-- North, South, and Downtown districts for dashboard layout and repair dispatch
+- geographically based repair-team dispatch and repair-time estimates
 
 ### 2. Outage Detection Logic
 A reachability-based outage detection system is implemented in [OutageDetector.java](OutageDetector.java). It performs a breadth-first traversal from powered substations and marks all nodes that are disconnected from the source as affected.
@@ -85,15 +105,31 @@ This provides a clear demonstration of the outage detection and restoration proc
 
 ### 7. Interactive Swing Dashboard
 The Java Swing frontend is implemented in [MainDashboard.java](MainDashboard.java). It
-renders the 20-node, 21-line distribution network, supports clicking nodes and lines
-to edit sensor readings and line states, and provides controls for realistic city events,
-multi-source BFS detection, automatic restoration, and grid reset. Its repair queue
-shows the line ID, fault zone, priority, dispatched team, and ETA.
+renders the 20-node, 21-line distribution network, supports clicking nodes and
+lines to edit sensor readings and line states, and provides controls for city
+events, outage detection, automatic restoration, and grid reset. Its repair
+queue shows the line ID, fault zone, priority, dispatched team, and ETA.
 
 Launch the desktop interface from the project root with:
 `javac *.java` followed by `java MainDashboard`.
 
-### 8. Phase 4: History Persistence and Scenario Validation
+### 8. Browser Dashboard and HTTP API
+[MainDashboard.java](MainDashboard.java) also starts the local HTTP API on
+port 8081. It exposes network, outage, history, and team data, along with
+operations for simulating faults, running detection, restoring the grid,
+resetting it, and applying manual line edits. [app.js](app.js) consumes these
+endpoints and renders live network state, the dynamic grid-status badge, outage
+queue, repair-team table, and recent events in [index.html](index.html) and the
+related browser pages. The Grid operations panel provides event simulation,
+automatic restoration, and reset controls. The API also exposes a separate
+outage-detection operation. The layout is responsive, and the dashboard no
+longer includes the six summary metric cards.
+
+Serve the HTML/CSS/JavaScript pages from a local static web server and launch
+`MainDashboard` to provide their API. Both processes must be running for the
+browser dashboard to load live data and perform operations.
+
+### 9. Phase 4: History Persistence and Scenario Validation
 [HistoryManager.java](HistoryManager.java) appends fault detection, activated backup-plan,
 and repair-completion events to `outage_history.csv` in the working directory. It writes
 the six-column CSV header on first use, quotes CSV fields safely, and loads event rows for
@@ -106,8 +142,11 @@ detection BFS and restoration backup-path search with `System.nanoTime()` and pr
 their combined latency in milliseconds. Run it from the project root with:
 `javac *.java` followed by `java ScenarioTestRunner`.
 
-## Current Project Status
-The project is currently functioning as a working prototype and simulation environment. Core logic for network modeling, outage detection, sensor anomaly detection, and restoration strategy has been developed and is integrated into the main program.
+Standalone verification programs are also present:
+[Phase1StabilizationTest.java](Phase1StabilizationTest.java),
+[Phase2CoreAlgorithmTest.java](Phase2CoreAlgorithmTest.java), and
+[Phase4PersistenceTest.java](Phase4PersistenceTest.java). Run them from the
+project root after compiling with `javac *.java`.
 
 ## Strengths of the Current Implementation
 - Clear separation of concerns between network, outage detection, sensors, and restoration
@@ -115,21 +154,31 @@ The project is currently functioning as a working prototype and simulation envir
 - Realistic handling of backup links and repair operations
 - Demonstration mode with predefined critical infrastructure and consumer areas
 - Priority-based restoration workflow
+- Desktop and browser interfaces backed by the same Java network simulation
+- Local event-history persistence and repeatable scenario/test runners
 
 ## Limitations / Areas for Improvement
+- The network is static and predefined rather than configurable from input files.
 - Event history is persisted in a local CSV file rather than a database or external data source.
-- A standalone `Phase1StabilizationTest.java` verification runner covers baseline
-  reachability, single and multiple line failures, and restoration.
-  Run it from the project root with `javac *.java` followed by
-  `java Phase1StabilizationTest`.
-- The network is static and predefined rather than configurable from input files
-- Some restoration logic would benefit from more extensive validation under multiple outage scenarios
+- The HTTP API and dashboard are intended for local demonstration; authentication,
+  deployment hardening, and multi-user operation are not implemented.
+- Browser-level integration checks and a consolidated automated test/build command
+  would make evaluation and regression testing more repeatable.
+- Restoration logic would benefit from broader validation across simultaneous
+  and extended outage scenarios.
 
 ## Next Recommended Steps
-1. Add automated unit tests for outage detection and restoration behavior
-2. Improve network configuration flexibility with file-based or GUI-based input
-3. Extend damage and restoration analytics for more realistic utility operations
-4. Consider a more advanced optimization strategy for prioritizing multiple faults
+1. Run all three verification programs and the 15-scenario runner as a final
+   Review 2 regression check.
+2. Add browser/API integration checks for live refresh and dashboard operations.
+3. Improve network configuration flexibility with file-based or GUI-based input.
+4. Extend damage and restoration analytics and evaluate restoration across
+   broader multi-outage scenarios.
 
 ## Conclusion
-The project has reached a solid prototype stage: the main simulation of an electricity outage detection and restoration system is implemented, integrated, and runnable. The system demonstrates the fundamental decision flow expected in a smart grid environment and provides a strong base for future expansion into a more realistic, scalable utility management tool.
+The project has reached an integrated, review-ready prototype stage. Its
+network simulation, outage detection, sensor checks, restoration workflow,
+repair-team assignment, history persistence, Swing interface, and browser
+dashboard are in place. The next priority is to run the existing verification
+programs together and validate the browser/API workflow before expanding
+configuration or production capabilities.

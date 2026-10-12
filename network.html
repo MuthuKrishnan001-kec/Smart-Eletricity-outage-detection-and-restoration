@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Network overview of the SmartGrid Monitor demonstration topology." />
+    <meta name="description" content="Live network overview for SmartGrid Monitor." />
     <title>SmartGrid Monitor | Network Overview</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
@@ -14,7 +14,6 @@
           <div class="brand-mark" aria-hidden="true"></div>
           <div class="brand-text">SmartGrid Monitor</div>
         </div>
-
         <nav class="nav" aria-label="Sidebar navigation">
           <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
           <a class="nav-item active" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
@@ -24,109 +23,80 @@
           <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
           <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
         </nav>
-
-        <div class="sidebar-footer">Static view of the Java network model</div>
+        <div class="sidebar-footer">Live Java network state</div>
       </aside>
 
       <div class="main-panel">
         <header class="topbar">
-          <div class="page-heading">
-            <h1>Network Overview</h1>
-          </div>
+          <div class="page-heading"><h1>Network Overview</h1></div>
           <div class="topbar-meta">
-            <span class="status-pill"><span class="status-dot"></span> 13 nodes / 14 lines</span>
+            <span class="status-pill" data-api-status role="status">Connecting…</span>
             <a class="header-action" href="network.html">Refresh</a>
           </div>
         </header>
-
         <main class="content">
-          <div class="card network-board">
-            <svg class="network-svg" viewBox="0 0 1100 600" role="img" aria-label="Smart electricity distribution network diagram">
-              <defs>
-                <style>
-                  .label { font: 600 16px 'Segoe UI', sans-serif; fill: #1c2a39; }
-                  .small { font: 600 12px 'Segoe UI', sans-serif; fill: #5f7087; }
-                  .line-ok { stroke: #5cb081; stroke-width: 5; fill: none; }
-                  .line-backup { stroke: #4c7ae7; stroke-width: 4; fill: none; stroke-dasharray: 8 8; }
-                  .line-fail { stroke: #dc3d4b; stroke-width: 5; fill: none; }
-                  .node-sub { fill: #dfeeff; stroke: #2364d2; stroke-width: 3; }
-                  .node-feeder { fill: #eafaf3; stroke: #1f9d71; stroke-width: 3; }
-                  .node-zone { fill: #fff0d9; stroke: #d9931a; stroke-width: 3; }
-                  .node-critical { fill: #ffe7eb; stroke: #dc3d4b; stroke-width: 3; }
-                </style>
-              </defs>
-
-              <line class="line-ok" x1="150" y1="120" x2="330" y2="120" />
-              <line class="line-ok" x1="150" y1="210" x2="330" y2="210" />
-              <line class="line-ok" x1="750" y1="120" x2="940" y2="120" />
-              <line class="line-ok" x1="750" y1="210" x2="940" y2="210" />
-              <line class="line-ok" x1="330" y1="120" x2="480" y2="120" />
-              <line class="line-ok" x1="330" y1="210" x2="480" y2="210" />
-              <line class="line-ok" x1="480" y1="120" x2="640" y2="270" />
-              <line class="line-ok" x1="480" y1="210" x2="640" y2="270" />
-              <line class="line-ok" x1="640" y1="270" x2="750" y2="120" />
-              <line class="line-ok" x1="640" y1="270" x2="750" y2="210" />
-              <line class="line-ok" x1="480" y1="120" x2="640" y2="420" />
-              <line class="line-ok" x1="480" y1="210" x2="640" y2="420" />
-              <line class="line-backup" x1="640" y1="270" x2="750" y2="420" />
-              <line class="line-backup" x1="480" y1="120" x2="750" y2="420" />
-              <line class="line-backup" x1="330" y1="120" x2="750" y2="210" />
-
-              <circle class="node-sub" cx="150" cy="120" r="28" />
-              <circle class="node-sub" cx="150" cy="210" r="28" />
-              <circle class="node-feeder" cx="330" cy="120" r="24" />
-              <circle class="node-feeder" cx="330" cy="210" r="24" />
-              <circle class="node-feeder" cx="750" cy="120" r="24" />
-              <circle class="node-feeder" cx="750" cy="210" r="24" />
-              <circle class="node-zone" cx="480" cy="120" r="22" />
-              <circle class="node-zone" cx="480" cy="210" r="22" />
-              <circle class="node-zone" cx="640" cy="270" r="24" />
-              <circle class="node-zone" cx="940" cy="120" r="22" />
-              <circle class="node-zone" cx="940" cy="210" r="22" />
-              <circle class="node-critical" cx="640" cy="420" r="27" />
-              <circle class="node-critical" cx="750" cy="420" r="27" />
-
-              <text class="label" x="116" y="94">S1</text>
-              <text class="label" x="116" y="184">S2</text>
-              <text class="label" x="314" y="95">F1</text>
-              <text class="label" x="314" y="185">F2</text>
-              <text class="label" x="734" y="95">F3</text>
-              <text class="label" x="734" y="185">F4</text>
-              <text class="label" x="463" y="95">C1</text>
-              <text class="label" x="463" y="184">C2</text>
-              <text class="label" x="620" y="248">C3</text>
-              <text class="label" x="924" y="94">C4</text>
-              <text class="label" x="924" y="184">C5</text>
-              <text class="label" x="621" y="408">H1</text>
-              <text class="label" x="736" y="408">E1</text>
-            </svg>
+          <div class="network-action-layout">
+            <article class="card panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Live distribution topology</h2>
+                <span class="muted">Powered nodes and line status from the Java model</span>
+              </div>
+              <div class="network-board">
+                <canvas id="networkCanvas" width="1100" height="1000"
+                  style="display: block; width: 100%; height: auto;"
+                  aria-label="Live electricity distribution network"></canvas>
+              </div>
+            </article>
+            <section class="network-actions" aria-label="Grid operations">
+              <button class="header-action" type="button" data-grid-action="autoDetect">Auto Detect</button>
+              <button class="header-action" type="button" data-grid-action="restore">Restore</button>
+              <button class="header-action" type="button" data-grid-action="reset">Reset</button>
+            </section>
           </div>
-
           <div class="legend" aria-label="Network legend">
-            <span class="legend-item"><span class="legend-swatch" style="background: #5cb081"></span>Healthy line</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: #2364d2"></span>Backup link</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: #dc3d4b"></span>Critical or failed path</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: #dfeeff"></span>Substation</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: #eafaf3"></span>Feeder</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: #fff0d9"></span>Consumer area</span>
-          </div>
-
-          <div class="summary-box" style="margin-top: 20px;">
-            <div class="kpi-box">
-              <span class="muted">North</span>
-              <strong>2 feeders</strong>
-            </div>
-            <div class="kpi-box">
-              <span class="muted">South</span>
-              <strong>2 feeders</strong>
-            </div>
-            <div class="kpi-box">
-              <span class="muted">Downtown</span>
-              <strong>Central ring path</strong>
-            </div>
+            <span class="legend-item"><span class="legend-swatch" style="background: #34a66a"></span>Powered node</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #d9931a"></span>Low-voltage node</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #dc3d4b"></span>Affected node / failed line</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #23945e"></span>Working line</span>
+            <span class="legend-item"><span class="legend-swatch" style="background: #2864d7"></span>Standby line</span>
           </div>
         </main>
       </div>
     </div>
+    <div id="editModal" class="modal" hidden>
+      <div class="modal-backdrop" data-modal-cancel></div>
+      <section class="modal-dialog card" role="dialog" aria-modal="true"
+        aria-labelledby="editModalTitle">
+        <div class="panel-header">
+          <h2 id="editModalTitle" class="panel-title">Edit Network Status</h2>
+          <button class="modal-close" type="button" aria-label="Close" data-modal-cancel>&times;</button>
+        </div>
+        <form id="editForm">
+          <p id="editSelectionTitle" class="muted"></p>
+          <div id="incidentLineField" class="form-field" hidden>
+            <label for="editLineId">Incident line</label>
+            <select id="editLineId"></select>
+          </div>
+          <div class="form-field">
+            <label for="editVoltage">Observed voltage (V)</label>
+            <input id="editVoltage" type="number" min="0" max="1000" step="1" value="230" required />
+          </div>
+          <div id="editStatusField" class="form-field">
+            <label for="editStatus">Status</label>
+            <select id="editStatus" required>
+              <option value="WORKING">WORKING</option>
+              <option value="FAILED">FAILED</option>
+              <option value="STANDBY">STANDBY</option>
+            </select>
+          </div>
+          <p id="editError" class="modal-error" role="alert"></p>
+          <div class="modal-actions">
+            <button id="applyEditButton" class="header-action" type="submit">Apply Changes</button>
+            <button class="header-action" type="button" data-modal-cancel>Cancel</button>
+          </div>
+        </form>
+      </section>
+    </div>
+    <script src="app.js"></script>
   </body>
 </html>

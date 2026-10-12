@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="SmartGrid outage monitoring view." />
+    <meta name="description" content="Live outage queue for SmartGrid Monitor." />
     <title>SmartGrid Monitor | Outage Monitoring</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
@@ -14,7 +14,6 @@
           <div class="brand-mark" aria-hidden="true"></div>
           <div class="brand-text">SmartGrid Monitor</div>
         </div>
-
         <nav class="nav" aria-label="Sidebar navigation">
           <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
           <a class="nav-item" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
@@ -24,144 +23,40 @@
           <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
           <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
         </nav>
-
-        <div class="sidebar-footer">Static view of the outage queue</div>
+        <div class="sidebar-footer">Live restoration priority queue</div>
       </aside>
 
       <div class="main-panel">
         <header class="topbar">
-          <div class="page-heading">
-            <h1>Outage Monitoring</h1>
-          </div>
+          <div class="page-heading"><h1>Outage Monitoring</h1></div>
           <div class="topbar-meta">
-            <span class="status-pill"><span class="status-dot"></span> 1 active fault</span>
+            <span class="status-pill" data-api-status role="status">Connecting…</span>
             <a class="header-action" href="outages.html">Refresh</a>
           </div>
         </header>
-
         <main class="content">
-          <div class="filter-row" aria-label="Outage filters">
-            <span class="filter-chip active">All</span>
-            <span class="filter-chip">North</span>
-            <span class="filter-chip">South</span>
-            <span class="filter-chip">Downtown</span>
-            <span class="filter-chip">Priority</span>
-          </div>
-
           <article class="card panel">
             <div class="panel-header">
-              <h2 class="panel-title">Fault activity</h2>
-              <span class="muted">Static monitoring summary</span>
+              <h2 class="panel-title">Pending faults</h2>
+              <span class="muted">Sorted by Java restoration priority</span>
             </div>
-
             <div class="table-wrap">
-              <table class="table">
+              <table id="outagesTable" class="table">
                 <thead>
                   <tr>
                     <th>Fault ID</th>
-                    <th>Failed line</th>
-                    <th>District</th>
-                    <th>Affected nodes</th>
-                    <th>Critical facilities</th>
-                    <th>Priority</th>
-                    <th>Assigned team</th>
-                    <th>Est. restore</th>
-                    <th>Status</th>
+                    <th>Priority Points</th>
+                    <th>Affected Nodes</th>
+                    <th>Assigned Team</th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr>
-                    <td>L7-Fault</td>
-                    <td>L7</td>
-                    <td>North</td>
-                    <td>1</td>
-                    <td>1</td>
-                    <td>High</td>
-                    <td>RT2</td>
-                    <td>50 min</td>
-                    <td><span class="status-label status-critical">Active</span></td>
-                  </tr>
-                  <tr>
-                    <td>L1-Fault</td>
-                    <td>L1</td>
-                    <td>North</td>
-                    <td>2</td>
-                    <td>0</td>
-                    <td>Medium</td>
-                    <td>RT1</td>
-                    <td>35 min</td>
-                    <td><span class="status-label status-watch">Monitoring</span></td>
-                  </tr>
-                  <tr>
-                    <td>L9-Fault</td>
-                    <td>L9</td>
-                    <td>South</td>
-                    <td>1</td>
-                    <td>0</td>
-                    <td>Low</td>
-                    <td>RT3</td>
-                    <td>22 min</td>
-                    <td><span class="status-label status-available">Restored</span></td>
-                  </tr>
-                </tbody>
+                <tbody></tbody>
               </table>
             </div>
           </article>
-
-          <section class="section-grid" style="margin-top: 20px;">
-            <article class="card panel">
-              <div class="panel-header">
-                <h2 class="panel-title">Fault detail</h2>
-                <span class="muted">Selected event</span>
-              </div>
-
-              <div class="details-card">
-                <div class="details-grid">
-                  <div><strong>Fault</strong> L7-Fault</div>
-                  <div><strong>Failed path</strong> F2 → H1</div>
-                  <div><strong>Location</strong> North district</div>
-                  <div><strong>Critical impact</strong> Hospital outage</div>
-                  <div><strong>Priority score</strong> 100</div>
-                  <div><strong>Assigned team</strong> RT2 • Bravo Crew</div>
-                  <div><strong>Estimated restoration</strong> 50 minutes</div>
-                  <div><strong>Current status</strong> Active</div>
-                </div>
-              </div>
-            </article>
-
-            <article class="card panel">
-              <div class="panel-header">
-                <h2 class="panel-title">Action controls</h2>
-                <span class="muted">Static actions only</span>
-              </div>
-
-              <div class="signal-list">
-                <div class="signal-item">
-                  <div class="signal-meta">
-                    <strong>Manual line fault</strong>
-                    <span>Requires Java-side simulation</span>
-                  </div>
-                  <span class="badge">Not available</span>
-                </div>
-                <div class="signal-item">
-                  <div class="signal-meta">
-                    <strong>Sensor-based detection</strong>
-                    <span>Requires Java runtime</span>
-                  </div>
-                  <span class="badge">Static</span>
-                </div>
-                <div class="signal-item">
-                  <div class="signal-meta">
-                    <strong>Restoration</strong>
-                    <span>Executed by the Java model</span>
-                  </div>
-                  <span class="badge">Static</span>
-                </div>
-              </div>
-            </article>
-          </section>
         </main>
       </div>
     </div>
+    <script src="app.js"></script>
   </body>
 </html>
