@@ -2,7 +2,11 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.Insets;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
@@ -43,8 +47,10 @@ public class MainDashboard extends JFrame {
     private static final double VOLTAGE_DROP_THRESHOLD_PERCENT = 20.0;
     private static final Pattern STATUS_PATTERN =
             Pattern.compile("\"newStatus\"\\s*:\\s*\"(WORKING|FAILED|STANDBY)\"");
-    private static final Color BACKGROUND = new Color(244, 247, 250);
-    private static final Color INK = new Color(38, 52, 67);
+    private static final Color BACKGROUND = new Color(246, 248, 251);
+    private static final Color INK = new Color(24, 39, 61);
+    private static final Color MUTED = new Color(104, 119, 139);
+    private static final Color ACCENT = new Color(37, 99, 235);
 
     private final DistributionNetwork network =
             DistributionNetwork.createDemonstrationNetwork();
@@ -512,42 +518,95 @@ public class MainDashboard extends JFrame {
     }
 
     private void buildInterface() {
-        setLayout(new BorderLayout(12, 12));
+        setLayout(new BorderLayout(16, 16));
         getContentPane().setBackground(BACKGROUND);
-        getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        getRootPane().setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-        JPanel toolbar = new JPanel();
-        toolbar.setBackground(Color.WHITE);
-        toolbar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(222, 229, 236)),
-                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
-        toolbar.setLayout(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 10, 0));
-        toolbar.add(createButton("Auto Detection", this::simulateRandomDetectionEvent));
-        toolbar.add(createButton("Restore", this::autoRestore));
-        toolbar.add(createButton("History", this::showHistory));
-        toolbar.add(createButton("Reset Grid", this::resetGrid));
-        add(toolbar, BorderLayout.NORTH);
+        JPanel header = new JPanel(new BorderLayout(24, 0));
+        header.setBackground(Color.WHITE);
+        header.setBorder(createCardBorder(18, 22));
 
+        JPanel branding = new JPanel(new BorderLayout(0, 4));
+        branding.setOpaque(false);
+        JLabel title = new JLabel("SmartGrid");
+        title.setForeground(INK);
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 24f));
+        JLabel subtitle = new JLabel("OUTAGE DETECTION  /  RESTORATION");
+        subtitle.setForeground(MUTED);
+        subtitle.setFont(subtitle.getFont().deriveFont(Font.BOLD, 10f));
+        branding.add(title, BorderLayout.CENTER);
+        branding.add(subtitle, BorderLayout.SOUTH);
+        header.add(branding, BorderLayout.WEST);
+
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        toolbar.setOpaque(false);
+        toolbar.add(createButton("Detect Outage", this::simulateRandomDetectionEvent,
+                ACCENT, Color.WHITE));
+        toolbar.add(createButton("Restore Grid", this::autoRestore,
+                new Color(226, 244, 238), new Color(20, 116, 82)));
+        toolbar.add(createButton("History", this::showHistory,
+                new Color(241, 245, 249), INK));
+        toolbar.add(createButton("Reset", this::resetGrid,
+                new Color(254, 242, 242), new Color(185, 58, 58)));
+        header.add(toolbar, BorderLayout.EAST);
+        add(header, BorderLayout.NORTH);
+
+        JPanel networkPanel = new JPanel(new BorderLayout(0, 12));
+        networkPanel.setBackground(Color.WHITE);
+        networkPanel.setBorder(createCardBorder(18, 18));
+        JLabel networkTitle = new JLabel("Network topology");
+        networkTitle.setForeground(INK);
+        networkTitle.setFont(networkTitle.getFont().deriveFont(Font.BOLD, 16f));
+        networkPanel.add(networkTitle, BorderLayout.NORTH);
         canvas.setBackground(new Color(250, 252, 254));
-        canvas.setBorder(BorderFactory.createLineBorder(new Color(222, 229, 236)));
+        canvas.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         canvas.setSensorMonitor(sensorMonitor);
         canvas.setAfterEdit(this::runDetection);
-        add(new JScrollPane(canvas), BorderLayout.CENTER);
+        JScrollPane canvasScrollPane = new JScrollPane(canvas);
+        canvasScrollPane.setBorder(BorderFactory.createLineBorder(
+                new Color(231, 236, 242)));
+        canvasScrollPane.getViewport().setBackground(canvas.getBackground());
+        networkPanel.add(canvasScrollPane, BorderLayout.CENTER);
+        add(networkPanel, BorderLayout.CENTER);
 
         JPanel sidePanel = new JPanel(new BorderLayout(0, 10));
-        sidePanel.setPreferredSize(new Dimension(420, 0));
+        sidePanel.setPreferredSize(new Dimension(400, 0));
         sidePanel.setBackground(BACKGROUND);
         sidePanel.add(statusSummaryPanel, BorderLayout.CENTER);
 
-        statusLabel.setForeground(INK);
-        statusLabel.setBorder(BorderFactory.createEmptyBorder(8, 2, 2, 2));
+        statusLabel.setForeground(MUTED);
+        statusLabel.setFont(statusLabel.getFont().deriveFont(12f));
+        statusLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+        statusLabel.setBackground(Color.WHITE);
+        statusLabel.setOpaque(true);
         sidePanel.add(statusLabel, BorderLayout.SOUTH);
         add(sidePanel, BorderLayout.EAST);
     }
 
-    private JButton createButton(String text, Runnable action) {
+    private javax.swing.border.Border createCardBorder(int verticalPadding,
+            int horizontalPadding) {
+        return BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(
+                        verticalPadding, horizontalPadding,
+                        verticalPadding, horizontalPadding));
+    }
+
+    private JButton createButton(String text, Runnable action,
+            Color background, Color foreground) {
         JButton button = new JButton(text);
         button.setFocusPainted(false);
+        button.setFont(button.getFont().deriveFont(Font.BOLD, 12f));
+        button.setForeground(foreground);
+        button.setBackground(background);
+        button.setOpaque(true);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(background),
+                BorderFactory.createEmptyBorder(9, 14, 9, 14)));
+        button.setMargin(new Insets(0, 0, 0, 0));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         button.addActionListener(event -> action.run());
         return button;
     }
