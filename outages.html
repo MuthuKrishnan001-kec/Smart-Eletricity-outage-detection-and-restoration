@@ -26,6 +26,9 @@
       </aside>
 
       <div class="main-panel">
+        <aside class="safety-notice" role="note" aria-label="Electrical safety notice">
+          SAFETY NOTICE: Software-based electricity network simulation only. BFS and graph connectivity identify possible network paths only; this system does not calculate actual voltage, current, load flow, line capacity, or protection coordination. A proposed backup path is not a real-world switching instruction. Simulated operator approval is not electrical authorization. Never use this software to operate real electrical equipment.
+        </aside>
         <header class="topbar">
           <div class="page-heading"><h1>Outage Monitoring</h1></div>
           <div class="topbar-meta">
@@ -44,9 +47,62 @@
                 <thead>
                   <tr>
                     <th>Fault ID</th>
+                    <th>Line status</th>
+                    <th>Repair status</th>
                     <th>Priority Points</th>
-                    <th>Affected Nodes</th>
+                    <th>Affected Consumers</th>
+                    <th>Critical Facilities</th>
                     <th>Assigned Team</th>
+                    <th>Travel Time</th>
+                    <th>Repair Time</th>
+                    <th>Total ETA</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="card panel">
+            <div class="panel-header">
+              <h2 class="panel-title">Fault restoration tracking</h2>
+              <span class="muted">Line repair, consumer restoration, and network restoration are separate states</span>
+            </div>
+            <div class="table-wrap">
+              <table id="restorationTable" class="table">
+                <thead>
+                  <tr>
+                    <th>Line</th>
+                    <th>Line status</th>
+                    <th>Repair status</th>
+                    <th>Affected consumers</th>
+                    <th>Critical facilities</th>
+                    <th>Consumers restored</th>
+                    <th>Assigned team</th>
+                    <th>Repair</th>
+                    <th>Travel</th>
+                    <th>Total ETA</th>
+                    <th>Network restored</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="card panel">
+            <div class="panel-header">
+              <h2 class="panel-title">Backup link proposals</h2>
+              <span class="muted">Operator approval is required before activation</span>
+            </div>
+            <div class="table-wrap">
+              <table id="backupApprovalsTable" class="table">
+                <thead>
+                  <tr>
+                    <th>Backup line</th>
+                    <th>Current status</th>
+                    <th>Proposed restoration path</th>
+                    <th>Approval status</th>
+                    <th>Affected consumers</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody></tbody>

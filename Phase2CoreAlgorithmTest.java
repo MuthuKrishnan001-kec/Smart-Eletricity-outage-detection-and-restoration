@@ -1,3 +1,4 @@
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -5,9 +6,11 @@ public class Phase2CoreAlgorithmTest {
     public static void main(String[] args) {
         testIntegratedVoltageFaultDiagnostics();
         testPriorityQueueOrdering();
+        testPriorityChangesReorderQueue();
+        testHighPriorityReportPreemptsWaitingAssignments();
         testBackupPlanAndRepairTime();
         testCityEventsAndCrewAssignment();
-        System.out.println("Phase 2 core algorithm checks passed (4/4).");
+        System.out.println("Phase 2 core algorithm checks passed (6/6).");
     }
 
     private static void testIntegratedVoltageFaultDiagnostics() {
@@ -38,51 +41,118 @@ public class Phase2CoreAlgorithmTest {
 
     private static void testPriorityQueueOrdering() {
         DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
+        FaultReport hospitalFault = new FaultReport(
+                network.getLine("L7"), Collections.<NetworkNode>singletonList(
+                        network.getNode("H1")));
+        FaultReport residentialFault = new FaultReport(
+                network.getLine("L5"), Collections.<NetworkNode>singletonList(
+                        new GeneralArea("R1", "Large Residential Area", true, 10000)));
+        RestorationPolicy hospitalPolicy = new RestorationPolicy();
+        hospitalPolicy.submitFault(residentialFault);
+        hospitalPolicy.submitFault(hospitalFault);
+        assertTrue(hospitalPolicy.peekNextFault() == hospitalFault,
+                "a hospital fault must outrank a residential fault");
+
+        FaultReport twoCriticalFacilities = new FaultReport(
+                network.getLine("L5"), Arrays.<NetworkNode>asList(
+                        network.getNode("H1"), network.getNode("E1")));
+        FaultReport oneCriticalFacility = new FaultReport(
+                network.getLine("L6"), Arrays.<NetworkNode>asList(
+                        network.getNode("H1"),
+                        new GeneralArea("R2", "Large Residential Area", true, 10000)));
+        RestorationPolicy criticalCountPolicy = new RestorationPolicy();
+        criticalCountPolicy.submitFault(oneCriticalFacility);
+        criticalCountPolicy.submitFault(twoCriticalFacilities);
+        assertTrue(criticalCountPolicy.peekNextFault() == twoCriticalFacilities,
+                "higher critical-facility count must rank first");
+
         NetworkNode industrial = new ZonedArea(
-                "I1", "Industrial Area", true, 1,
+                "I1", "Industrial Area", true, 100,
                 ConsumerZone.INDUSTRIAL, CityDistrict.SOUTH);
-        NetworkNode residential = new GeneralArea("R1", "Large Residential Area", true, 10000);
+        NetworkNode residential = new GeneralArea(
+                "R3", "Residential Area", true, 200);
+        FaultReport fewerConsumers = new FaultReport(
+                network.getLine("L5"), Collections.singletonList(industrial));
+        FaultReport moreConsumers = new FaultReport(
+                network.getLine("L6"), Collections.singletonList(residential));
+        RestorationPolicy consumerCountPolicy = new RestorationPolicy();
+        consumerCountPolicy.submitFault(fewerConsumers);
+        consumerCountPolicy.submitFault(moreConsumers);
+        assertTrue(consumerCountPolicy.peekNextFault() == moreConsumers,
+                "total affected consumers must outrank industrial weighting");
 
-        RestorationPolicy economicPolicy = new RestorationPolicy();
-        FaultReport manyHouseholds = new FaultReport(
-                network.getLine("L5"), Collections.singletonList(residential));
-        FaultReport industrialFault = new FaultReport(
-                network.getLine("L6"), Collections.singletonList(industrial));
-        economicPolicy.submitFault(manyHouseholds);
-        economicPolicy.submitFault(industrialFault);
-        assertTrue(economicPolicy.peekNextFault() == industrialFault,
-                "industrial/commercial impact must rank above residential household count");
+        FaultReport firstInTie = new FaultReport(
+                network.getLine("L5"), Collections.<NetworkNode>singletonList(
+                        new GeneralArea("R4", "First Area", true, 50)));
+        FaultReport secondInTie = new FaultReport(
+                network.getLine("L6"), Collections.<NetworkNode>singletonList(
+                        new GeneralArea("R5", "Second Area", true, 50)));
+        RestorationPolicy reportOrderPolicy = new RestorationPolicy();
+        reportOrderPolicy.submitFault(secondInTie);
+        reportOrderPolicy.submitFault(firstInTie);
+        assertTrue(reportOrderPolicy.peekNextFault() == firstInTie,
+                "equal impact must use earliest report sequence even if submitted later");
+    }
 
-        RestorationPolicy householdPolicy = new RestorationPolicy();
-        FaultReport fewerHouseholds = new FaultReport(
-                network.getLine("L5"),
-                Collections.<NetworkNode>singletonList(
-                        new GeneralArea("R2", "Smaller Residential Area", true, 1000)));
-        FaultReport moreHouseholds = new FaultReport(
-                network.getLine("L6"),
-                Collections.<NetworkNode>singletonList(
-                        new GeneralArea("R3", "Larger Residential Area", true, 2000)));
-        householdPolicy.submitFault(fewerHouseholds);
-        householdPolicy.submitFault(moreHouseholds);
-        assertTrue(householdPolicy.peekNextFault() == moreHouseholds,
-                "greater residential household impact must break economic ties");
+    private static void testPriorityChangesReorderQueue() {
+        DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
+        RestorationPolicy policy = new RestorationPolicy();
+        FaultReport updatedReport = new FaultReport(
+                network.getLine("L5"), Collections.<NetworkNode>singletonList(
+                        new GeneralArea("R6", "Small Area", true, 1)));
+        FaultReport otherReport = new FaultReport(
+                network.getLine("L6"), Collections.<NetworkNode>singletonList(
+                        new GeneralArea("R7", "Medium Area", true, 10)));
+        policy.submitFault(updatedReport);
+        policy.submitFault(otherReport);
+        updatedReport.setAffectedNodes(Collections.<NetworkNode>singletonList(
+                network.getNode("H1")));
+        assertTrue(policy.peekNextFault() == updatedReport,
+                "a queued report must be reinserted after its priority changes");
+    }
 
-        FaultReport criticalFault = new FaultReport(
-                network.getLine("L7"),
-                Collections.<NetworkNode>singletonList(network.getNode("H1")));
-        economicPolicy.submitFault(criticalFault);
-        assertTrue(economicPolicy.peekNextFault() == criticalFault,
-                "critical infrastructure must outrank economic impact");
+    private static void testHighPriorityReportPreemptsWaitingAssignments() {
+        DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
+        List<RepairTeam> teams = Arrays.asList(
+                new RepairTeam("RT-A", "Alpha"),
+                new RepairTeam("RT-B", "Bravo"),
+                new RepairTeam("RT-C", "Charlie"));
+        RestorationPolicy policy = new RestorationPolicy(teams);
+        OutageDetector detector = new OutageDetector();
+        NetworkLine firstLowerLine = network.getLine("L5");
+        firstLowerLine.failLine();
+        FaultReport firstLowerPriority = new FaultReport(
+                firstLowerLine, detector.findAffectedNodes(network));
+        NetworkLine secondLowerLine = network.getLine("L6");
+        secondLowerLine.failLine();
+        FaultReport secondLowerPriority = new FaultReport(
+                secondLowerLine, detector.findAffectedNodes(network));
+        NetworkLine thirdLowerLine = network.getLine("L9");
+        thirdLowerLine.failLine();
+        FaultReport thirdLowerPriority = new FaultReport(
+                thirdLowerLine, detector.findAffectedNodes(network));
+        policy.submitFault(firstLowerPriority, network);
+        policy.submitFault(secondLowerPriority, network);
+        policy.submitFault(thirdLowerPriority, network);
+        assertDistinctAssignedTeams(
+                Arrays.asList(firstLowerPriority, secondLowerPriority, thirdLowerPriority),
+                "three lower-priority jobs must reserve separate teams");
 
-        RestorationPolicy fifoPolicy = new RestorationPolicy();
-        FaultReport firstInTie =
-                new FaultReport(network.getLine("L5"), Collections.emptyList());
-        FaultReport secondInTie =
-                new FaultReport(network.getLine("L6"), Collections.emptyList());
-        fifoPolicy.submitFault(firstInTie);
-        fifoPolicy.submitFault(secondInTie);
-        assertTrue(fifoPolicy.peekNextFault() == firstInTie,
-                "fully equal priority reports should retain FIFO order");
+        NetworkLine hospitalLine = network.getLine("L7");
+        hospitalLine.failLine();
+        FaultReport hospitalReport = new FaultReport(
+                hospitalLine, detector.findAffectedNodes(network));
+        policy.submitFault(hospitalReport, network);
+        assertTrue(policy.peekNextFault() == hospitalReport,
+                "new hospital report must become the highest-priority pending job");
+        assertTrue(hospitalReport.getAssignedTeam() != null,
+                "highest-priority pending job must receive a reserved team");
+
+        policy.restoreNextFault(network, detector);
+        assertTrue(hospitalReport.isLineRepairCompleted(),
+                "hospital report must dispatch before the three already-assigned jobs");
+        assertEquals(3, policy.getPendingFaultCount(),
+                "only the hospital report should be removed from the pending queue");
     }
 
     private static void testBackupPlanAndRepairTime() {
@@ -109,8 +179,8 @@ public class Phase2CoreAlgorithmTest {
                 failedLine, new OutageDetector().findAffectedNodes(network));
         RestorationPolicy restorationPolicy = new RestorationPolicy();
         restorationPolicy.submitFault(report, network);
-        assertEquals(60, report.getEstimatedRepairMinutes(),
-                "local depot ETA must include the 45-minute repair and 15-minute travel");
+        assertEquals(50, report.getEstimatedRepairMinutes(),
+                "local depot ETA must include L7's 35-minute repair and 15-minute travel");
         assertTrue(restorationPolicy.restoreNextFault(network, new OutageDetector()),
                 "failed line repair should restore full connectivity");
         assertTrue(report.isRestored(), "restored report state");
@@ -173,12 +243,28 @@ public class Phase2CoreAlgorithmTest {
         assignmentPolicy.submitFault(firstReport, stormNetwork);
         assignmentPolicy.submitFault(secondReport, stormNetwork);
         assignmentPolicy.submitFault(thirdReport, stormNetwork);
+        assertDistinctAssignedTeams(
+                Arrays.asList(firstReport, secondReport, thirdReport),
+                "three repair teams must be assigned to separate jobs");
         assertEquals("Alpha", firstReport.getAssignedTeam().getName(),
                 "first available repair team");
         assertEquals("Bravo", secondReport.getAssignedTeam().getName(),
                 "second available repair team");
         assertEquals("Charlie", thirdReport.getAssignedTeam().getName(),
                 "third available repair team");
+    }
+
+    private static void assertDistinctAssignedTeams(
+            List<FaultReport> reports, String message) {
+        java.util.Set<RepairTeam> assignedTeams = new java.util.HashSet<>();
+        for (FaultReport report : reports) {
+            assertTrue(report.getAssignedTeam() != null,
+                    message + " (job is unassigned)");
+            assertTrue(assignedTeams.add(report.getAssignedTeam()),
+                    message + " (team assigned more than once)");
+            assertEquals(RepairTeamStatus.BUSY, report.getAssignedTeam().getStatus(),
+                    message + " (reserved team must be busy)");
+        }
     }
 
     private static SensorMonitor createMonitor(DistributionNetwork network) {

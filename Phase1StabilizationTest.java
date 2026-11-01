@@ -13,7 +13,8 @@ public class Phase1StabilizationTest {
         test.testSingleFeederLineFailure();
         test.testMultipleLineFailuresAndOfflineSubstation();
         test.testLineRestoration();
-        System.out.println("Phase 1 stabilization checks passed (4/4).");
+        test.testMultipleFaultRestorationStatus();
+        System.out.println("Phase 1 stabilization checks passed (5/5).");
     }
 
     private void testNormalOperationAndGraphShape() {
@@ -84,8 +85,14 @@ public class Phase1StabilizationTest {
         };
         for (String[] transferCase : backupTransferCases) {
             network = DistributionNetwork.createDemonstrationNetwork();
-            network.getLine(transferCase[0]).failLine();
-            network.getLine(transferCase[1]).activateBackup();
+            NetworkLine transferFailedLine = network.getLine(transferCase[0]);
+            transferFailedLine.failLine();
+            RestorationPolicy policy = new RestorationPolicy();
+            FaultReport report = new FaultReport(
+                    transferFailedLine, detector.findAffectedNodes(network));
+            policy.submitFault(report, network);
+            policy.approveBackupLink(transferCase[1]);
+            policy.activateApprovedBackupLink(transferCase[1], network, detector);
             assertEquals(20, detector.findReachableNodes(network).size(),
                     transferCase[0] + " failure should reroute through "
                             + transferCase[1]);
@@ -146,6 +153,51 @@ public class Phase1StabilizationTest {
         backup.restoreLine();
         assertEquals(LineStatus.STANDBY, backup.getStatus(),
                 "restoring a backup should return it to standby");
+    }
+
+    private void testMultipleFaultRestorationStatus() {
+        DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
+        network.getLine("L5").failLine();
+        network.getLine("L6").failLine();
+        List<NetworkNode> affectedByBothFaults = detector.findAffectedNodes(network);
+        FaultReport firstReport = new FaultReport(
+                network.getLine("L5"), affectedByBothFaults);
+        FaultReport secondReport = new FaultReport(
+                network.getLine("L6"), affectedByBothFaults);
+        RestorationPolicy policy = new RestorationPolicy();
+        policy.submitFault(firstReport, network);
+        policy.submitFault(secondReport, network);
+
+        assertTrue(!policy.restoreNextFault(network, detector),
+                "the first line repair should leave the second fault affected");
+        assertTrue(firstReport.isLineRepairCompleted(),
+                "first line repair should be recorded as complete");
+        assertTrue(!firstReport.areAffectedConsumersRestored(),
+                "first report consumers should remain affected while L6 is failed");
+        assertTrue(!firstReport.isNetworkFullyRestored(),
+                "network should remain incomplete while L6 is failed");
+        assertTrue(!secondReport.isLineRepairCompleted(),
+                "second line repair should still be pending");
+
+        assertTrue(policy.restoreNextFault(network, detector),
+                "the final repair should restore complete network connectivity");
+        assertTrue(secondReport.isLineRepairCompleted(),
+                "second line repair should be recorded as complete");
+        assertTrue(firstReport.isRestored(),
+                "the earlier report should update when its affected consumers return");
+        assertTrue(secondReport.areAffectedConsumersRestored(),
+                "second report consumers should be restored after the final repair");
+        assertTrue(firstReport.isNetworkFullyRestored()
+                        && secondReport.isNetworkFullyRestored(),
+                "all reports should reflect complete network connectivity");
+        assertEquals(network.getNodes().size(), detector.findReachableNodes(network).size(),
+                "all network nodes should be reachable after the final repair");
+        for (NetworkNode node : network.getNodes()) {
+            if (node instanceof ConsumerArea) {
+                assertTrue(node.isPowered(),
+                        node.getId() + " should be powered after the final repair");
+            }
+        }
     }
 
     private static int primaryLineCount(DistributionNetwork network) {

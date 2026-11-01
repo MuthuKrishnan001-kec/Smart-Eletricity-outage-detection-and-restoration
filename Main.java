@@ -44,7 +44,7 @@ public class Main {
                     displayAffectedNodes();
                     break;
                 case "5":
-                    restoreNetwork();
+                    restoreNetwork(scanner);
                     break;
                 case "6":
                     resetNetwork();
@@ -60,6 +60,7 @@ public class Main {
 
     private void showMenu() {
         System.out.println();
+        System.out.println(SafetyNotice.TEXT);
         System.out.println("1. Display Network");
         System.out.println("2. Manual Line Fault");
         System.out.println("3. Simulate City Event and Run Sensor Detection");
@@ -80,7 +81,12 @@ public class Main {
         for (NetworkLine line : network.getLines()) {
             System.out.printf("%-4s %s <-> %s  %s%s%n",
                     line.getId(), line.getFromNodeId(), line.getToNodeId(),
-                    line.getStatus(), line.isBackupLink() ? " (backup)" : "");
+                    line.getStatus(), line.isBackupLink()
+                            ? " (backup; approval=" + line.getBackupApprovalStatus() + ")" : "");
+            if (line.getStatus() == LineStatus.FAILED) {
+                System.out.println("     Estimated repair: "
+                        + line.getRepairTimeMinutes() + " minute(s)");
+            }
         }
     }
 
@@ -104,7 +110,10 @@ public class Main {
             System.out.println(lineId + " is not WORKING, so it cannot be failed manually.");
             return;
         }
-        processFault(line, "Manual fault selected by user");
+        Integer repairMinutes = requestRepairTime(scanner, line);
+        if (repairMinutes != null) {
+            processFault(line, "Manual fault selected by user", repairMinutes);
+        }
     }
 
     private void runSensorDetection(Scanner scanner) {
@@ -168,6 +177,13 @@ public class Main {
             if (restorationPolicy.isPendingFault(line)) {
                 continue;
             }
+            Integer repairMinutes = requestRepairTime(scanner, line);
+            if (repairMinutes == null) {
+                line.restoreLine();
+                sensorMonitor.clearAnomaly(line.getId());
+                continue;
+            }
+            line.setRepairTimeMinutes(repairMinutes);
             SensorReading reading = sensorMonitor.getReading(line.getId());
             System.out.println("Fault detected on " + line.getId()
                     + " (status: " + line.getStatus() + ")");
@@ -183,18 +199,35 @@ public class Main {
             restorationPolicy.submitFault(report, network);
             lastFailedLine = line;
             displayFaultReport(report);
+            displayProposedBackupLinks(report);
             System.out.println("Fault added to restoration PriorityQueue.");
         }
-        lastAffectedNodes = new ArrayList<>(diagnostics.getAffectedNodes());
+        lastAffectedNodes = new ArrayList<>(outageDetector.findAffectedNodes(network));
     }
 
-    private void processFault(NetworkLine line, String faultSource) {
+    private Integer requestRepairTime(Scanner scanner, NetworkLine line) {
+        while (true) {
+            System.out.print("Enter estimated repair time for " + line.getId()
+                    + " in minutes (positive whole number): ");
+            if (!scanner.hasNextLine()) {
+                System.out.println("No repair time entered; no fault was submitted.");
+                return null;
+            }
+            try {
+                return RepairTimeInput.parsePositiveMinutes(scanner.nextLine());
+            } catch (IllegalArgumentException exception) {
+                System.out.println(exception.getMessage() + " Try again.");
+            }
+        }
+    }
+
+    private void processFault(NetworkLine line, String faultSource, int repairMinutes) {
         if (!line.isWorking()) {
             System.out.println("Line " + line.getId() + " is not working; fault was not submitted.");
             return;
         }
 
-        line.failLine();
+        line.failLine(repairMinutes);
         lastFailedLine = line;
         System.out.println(faultSource + ": " + line.getId() + " marked FAILED.");
 
@@ -203,6 +236,7 @@ public class Main {
         FaultReport report = new FaultReport(line, orderAffectedNodes(line, lastAffectedNodes));
         restorationPolicy.submitFault(report, network);
         displayFaultReport(report);
+        displayProposedBackupLinks(report);
         System.out.println("Fault added to restoration PriorityQueue.");
         System.out.println("Select option 5 to start restoration.");
     }
@@ -236,6 +270,13 @@ public class Main {
         System.out.println("\n================ OUTAGE DETECTION ================");
         System.out.println("Method             : Multi-source BFS");
         System.out.println("Failed Line        : " + report.getFailedLine().getId());
+        RepairTeam assignedTeam = report.getAssignedTeam();
+        System.out.println("Repair Team        : " + (assignedTeam == null
+                ? "Unassigned" : assignedTeam.getId() + " - " + assignedTeam.getName()));
+        System.out.println("Repair Time        : " + report.getRepairTimeMinutes() + " minute(s)");
+        System.out.println("Travel Time        : " + report.getTravelTimeMinutes() + " minute(s)");
+        System.out.println("Estimated Total ETA: "
+                + report.getEstimatedRestorationTimeMinutes() + " minute(s)");
         System.out.println("Affected Nodes:");
         for (NetworkNode node : report.getAffectedNodes()) {
             System.out.println(node.getId() + " - " + node.getName());
@@ -253,6 +294,11 @@ public class Main {
         }
         System.out.println("Affected Consumers: " + countAffectedConsumers(report));
         System.out.println("Priority Score    : " + report.getPriorityScore());
+        System.out.println("Line repair status: " + (report.isLineRepairCompleted()
+                ? "REPAIRED" : "PENDING"));
+        System.out.println("Affected consumers restored: "
+                + report.areAffectedConsumersRestored());
+        System.out.println("Entire network restored: " + report.isNetworkFullyRestored());
     }
 
     private int countAffectedConsumers(FaultReport report) {
@@ -276,10 +322,64 @@ public class Main {
         }
     }
 
-    private void restoreNetwork() {
+    private void displayProposedBackupLinks(FaultReport report) {
+        for (BackupLinkProposal proposal : restorationPolicy.getBackupLinkProposals()) {
+            if (!proposal.getFailedLineId().equals(report.getFailedLine().getId())
+                    || proposal.getApprovalStatus() != BackupApprovalStatus.PROPOSED) {
+                continue;
+            }
+            String consumers = proposal.getAffectedConsumers().stream()
+                    .map(NetworkNode::getId)
+                    .collect(java.util.stream.Collectors.joining(", "));
+            System.out.println("Proposed backup link " + proposal.getBackupLineId()
+                    + " for failed line " + proposal.getFailedLineId());
+            System.out.println("  Path: " + String.join(" -> ", proposal.getRestorationPath()));
+            System.out.println("  Affected consumers it may reconnect: "
+                    + proposal.getAffectedConsumerCount() + " across " + consumers);
+            System.out.println("  Approval status: " + proposal.getApprovalStatus());
+        }
+    }
+
+    private void restoreNetwork(Scanner scanner) {
         if (restorationPolicy.getPendingFaultCount() == 0) {
             System.out.println("There are no faults waiting for restoration.");
             return;
+        }
+        for (BackupLinkProposal proposal : restorationPolicy.getBackupLinkProposals()) {
+            if (proposal.getApprovalStatus() != BackupApprovalStatus.PROPOSED) {
+                continue;
+            }
+            String consumers = proposal.getAffectedConsumers().stream()
+                    .map(NetworkNode::getId)
+                    .collect(java.util.stream.Collectors.joining(", "));
+            System.out.println("Backup proposal " + proposal.getBackupLineId()
+                    + " | status=" + proposal.getBackupLine().getStatus()
+                    + " | path=" + String.join(" -> ", proposal.getRestorationPath())
+                    + " | reconnects=" + consumers);
+            System.out.print("Approve this backup link? (y/n): ");
+            if (!scanner.hasNextLine()) {
+                return;
+            }
+            if (!"y".equalsIgnoreCase(scanner.nextLine().trim())) {
+                restorationPolicy.rejectBackupLink(proposal.getBackupLineId());
+                System.out.println(proposal.getBackupLineId()
+                        + " rejected and remains inactive.");
+                continue;
+            }
+            restorationPolicy.approveBackupLink(proposal.getBackupLineId());
+            System.out.println(proposal.getBackupLineId()
+                    + " approved. Approval is separate from activation.");
+            System.out.print("Activate this approved link in the simulation? (y/n): ");
+            if (!scanner.hasNextLine()) {
+                return;
+            }
+            if ("y".equalsIgnoreCase(scanner.nextLine().trim())) {
+                int affectedCount = restorationPolicy.activateApprovedBackupLink(
+                        proposal.getBackupLineId(), network, outageDetector);
+                lastAffectedNodes = outageDetector.findAffectedNodes(network);
+            System.out.println("Backup BFS verification complete. Affected consumers remaining: "
+                        + affectedCount);
+            }
         }
         restorationPolicy.restoreNextFault(network, outageDetector);
         lastAffectedNodes = outageDetector.findAffectedNodes(network);

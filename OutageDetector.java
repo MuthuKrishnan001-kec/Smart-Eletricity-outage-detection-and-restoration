@@ -1,8 +1,11 @@
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 
@@ -49,6 +52,61 @@ public class OutageDetector {
         }
 
         return reachable;
+    }
+
+    public List<String> findPathToNode(
+            DistributionNetwork network,
+            Set<NetworkLine> activatedBackupLines,
+            String targetNodeId) {
+        if (network == null || activatedBackupLines == null || targetNodeId == null) {
+            throw new IllegalArgumentException(
+                    "network, activatedBackupLines, and targetNodeId must not be null.");
+        }
+        if (network.getNode(targetNodeId) == null) {
+            throw new IllegalArgumentException("Unknown target node: " + targetNodeId);
+        }
+
+        Queue<String> queue = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        Map<String, String> previousNode = new HashMap<>();
+        Map<String, String> previousLine = new HashMap<>();
+        for (Substation substation : network.getSubstations()) {
+            if (substation.isPowered() && visited.add(substation.getId())) {
+                queue.add(substation.getId());
+            }
+        }
+
+        while (!queue.isEmpty() && !visited.contains(targetNodeId)) {
+            String currentId = queue.remove();
+            for (NetworkLine line : network.getIncidentLines(currentId)) {
+                boolean virtuallyActivated = line.isBackupLink()
+                        && line.getStatus() == LineStatus.STANDBY
+                        && activatedBackupLines.contains(line);
+                if (!line.isWorking() && !virtuallyActivated) {
+                    continue;
+                }
+                String nextId = network.getOtherNodeId(line, currentId);
+                if (visited.add(nextId)) {
+                    previousNode.put(nextId, currentId);
+                    previousLine.put(nextId, line.getId());
+                    queue.add(nextId);
+                }
+            }
+        }
+
+        if (!visited.contains(targetNodeId)) {
+            return new ArrayList<>();
+        }
+        List<String> reversedPath = new ArrayList<>();
+        String cursor = targetNodeId;
+        reversedPath.add(cursor);
+        while (previousNode.containsKey(cursor)) {
+            reversedPath.add(previousLine.get(cursor));
+            cursor = previousNode.get(cursor);
+            reversedPath.add(cursor);
+        }
+        Collections.reverse(reversedPath);
+        return reversedPath;
     }
 
     public OutageDiagnostics detectFaults(

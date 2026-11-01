@@ -26,6 +26,9 @@
       </aside>
 
       <div class="main-panel">
+        <aside class="safety-notice" role="note" aria-label="Electrical safety notice">
+          SAFETY NOTICE: Software-based electricity network simulation only. BFS and graph connectivity identify possible network paths only; this system does not calculate actual voltage, current, load flow, line capacity, or protection coordination. A proposed backup path is not a real-world switching instruction. Simulated operator approval is not electrical authorization. Never use this software to operate real electrical equipment.
+        </aside>
         <header class="topbar">
           <div class="page-heading"><h1>Network Overview</h1></div>
           <div class="topbar-meta">
@@ -59,6 +62,26 @@
             <span class="legend-item"><span class="legend-swatch" style="background: #23945e"></span>Working line</span>
             <span class="legend-item"><span class="legend-swatch" style="background: #2864d7"></span>Standby line</span>
           </div>
+          <article class="card panel">
+            <div class="panel-header">
+              <h2 class="panel-title">Line and repair status</h2>
+              <span class="muted">Connectivity and repair details from the shared Java model</span>
+            </div>
+            <div class="table-wrap">
+              <table id="networkLinesTable" class="table">
+                <thead>
+                  <tr>
+                    <th>Line</th><th>Status</th><th>Repair status</th>
+                    <th>Backup approval</th><th>Affected consumers</th>
+                    <th>Critical facilities</th><th>Repair team</th>
+                    <th>Repair</th><th>Travel</th><th>Total ETA</th>
+                    <th>Consumers restored</th><th>Network restored</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
         </main>
       </div>
     </div>
@@ -87,6 +110,11 @@
               <option value="FAILED">FAILED</option>
               <option value="STANDBY">STANDBY</option>
             </select>
+          </div>
+          <div id="repairTimeField" class="form-field" hidden>
+            <label for="repairTimeMinutes">Estimated repair time (minutes)</label>
+            <input id="repairTimeMinutes" type="text" inputmode="numeric"
+              pattern="[0-9]+" maxlength="10" required />
           </div>
           <p id="editError" class="modal-error" role="alert"></p>
           <div class="modal-actions">

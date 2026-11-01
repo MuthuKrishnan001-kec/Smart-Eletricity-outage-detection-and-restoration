@@ -31,6 +31,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.table.DefaultTableModel;
 
 public class MainDashboard extends JFrame {
@@ -47,6 +48,8 @@ public class MainDashboard extends JFrame {
     private static final double VOLTAGE_DROP_THRESHOLD_PERCENT = 20.0;
     private static final Pattern STATUS_PATTERN =
             Pattern.compile("\"newStatus\"\\s*:\\s*\"(WORKING|FAILED|STANDBY)\"");
+    private static final Pattern REPAIR_TIME_PATTERN =
+            Pattern.compile("\"repairTimeMinutes\"\\s*:\\s*(-?\\d+)(?=\\s*[,}])");
     private static final Color BACKGROUND = new Color(246, 248, 251);
     private static final Color INK = new Color(24, 39, 61);
     private static final Color MUTED = new Color(104, 119, 139);
@@ -94,6 +97,8 @@ public class MainDashboard extends JFrame {
                     exchange, "GET", MainDashboard::buildOutageQueuePayload));
             server.createContext("/api/history", exchange -> handleDashboardRequest(
                     exchange, "GET", MainDashboard::buildHistoryPayload));
+            server.createContext("/api/backup-approvals", exchange -> handleDashboardRequest(
+                    exchange, "GET", MainDashboard::buildBackupApprovalsPayload));
             server.createContext("/api/teams", exchange -> handleDashboardRequest(
                     exchange, "GET", MainDashboard::buildTeamPayload));
             server.createContext("/api/health", exchange -> handleDashboardRequest(
@@ -109,6 +114,15 @@ public class MainDashboard extends JFrame {
                     handleDashboardAction(exchange, (dashboard, request) -> {
                         dashboard.autoRestoreFromApi();
                     }));
+            server.createContext("/api/actions/backup-approve", exchange ->
+                    handleDashboardAction(exchange, (dashboard, request) ->
+                            dashboard.approveBackupFromApi(readLineId(request))));
+            server.createContext("/api/actions/backup-reject", exchange ->
+                    handleDashboardAction(exchange, (dashboard, request) ->
+                            dashboard.rejectBackupFromApi(readLineId(request))));
+            server.createContext("/api/actions/backup-activate", exchange ->
+                    handleDashboardAction(exchange, (dashboard, request) ->
+                            dashboard.activateBackupFromApi(readLineId(request))));
             server.createContext("/api/actions/reset", exchange ->
                     handleDashboardAction(exchange, (dashboard, request) ->
                             dashboard.resetGrid()));
@@ -223,10 +237,20 @@ public class MainDashboard extends JFrame {
             throw new IllegalArgumentException(
                     "lineId, newVoltage, and newStatus are required.");
         }
+        LineStatus status = LineStatus.valueOf(statusMatcher.group(1));
+        int repairTimeMinutes = 0;
+        if (status == LineStatus.FAILED) {
+            Matcher repairTimeMatcher = REPAIR_TIME_PATTERN.matcher(requestBody);
+            if (!repairTimeMatcher.find()) {
+                throw new IllegalArgumentException(
+                        "A positive integer repairTimeMinutes is required for FAILED lines.");
+            }
+            repairTimeMinutes = RepairTimeInput.parsePositiveMinutes(
+                    repairTimeMatcher.group(1));
+        }
         return new ManualLineEdit(
-                lineMatcher.group(1),
-                Double.parseDouble(voltageMatcher.group(1)),
-                LineStatus.valueOf(statusMatcher.group(1)));
+                lineMatcher.group(1), Double.parseDouble(voltageMatcher.group(1)),
+                status, repairTimeMinutes);
     }
 
     private static NodeVoltageEdit readNodeVoltageEdit(HttpExchange exchange)
@@ -240,6 +264,16 @@ public class MainDashboard extends JFrame {
         }
         return new NodeVoltageEdit(
                 nodeMatcher.group(1), Double.parseDouble(voltageMatcher.group(1)));
+    }
+
+    private static String readLineId(HttpExchange exchange) throws IOException {
+        String requestBody = new String(
+                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        Matcher matcher = LINE_ID_PATTERN.matcher(requestBody);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("lineId is required.");
+        }
+        return matcher.group(1);
     }
 
     private static void sendJsonResponse(
@@ -261,6 +295,8 @@ public class MainDashboard extends JFrame {
     }
 
     private String buildNetworkPayload() {
+        boolean networkRestored =
+                restorationPolicy.refreshRestorationStatuses(network, outageDetector);
         List<NetworkNode> nodes = network.getNodes();
         List<NetworkLine> lines = network.getLines();
         StringBuilder json = new StringBuilder();
@@ -289,6 +325,7 @@ public class MainDashboard extends JFrame {
         json.append("],\"lines\":[");
         for (int i = 0; i < lines.size(); i++) {
             NetworkLine line = lines.get(i);
+            FaultReport report = restorationPolicy.getFaultReport(line.getId());
             if (i > 0) {
                 json.append(',');
             }
@@ -297,14 +334,84 @@ public class MainDashboard extends JFrame {
                 .append("\"to\":\"").append(escapeJson(line.getToNodeId())).append("\",")
                 .append("\"status\":\"").append(escapeJson(line.getStatus().name())).append("\",")
                 .append("\"backup\":").append(line.isBackupLink()).append(',')
+                .append("\"approvalStatus\":\"")
+                .append(line.getBackupApprovalStatus().name()).append("\",")
                 .append("\"observedVoltage\":")
                 .append(sensorMonitor.getReading(line.getId()) == null ? 230
                         : sensorMonitor.getReading(line.getId()).getObservedVoltage()).append(',')
-                .append("\"repairTimeMinutes\":").append(line.getRepairTimeMinutes()).append('}');
+                .append("\"repairTimeMinutes\":").append(line.getRepairTimeMinutes())
+                .append(",\"repairStatus\":\"")
+                .append(report == null
+                        ? (line.getStatus() == LineStatus.FAILED
+                                ? "FAILED_UNREPORTED" : "NO_FAULT")
+                        : (report.isLineRepairCompleted() ? "LINE_REPAIRED" : "REPAIR_PENDING"))
+                .append("\",\"assignedTeam\":\"")
+                .append(report == null || report.getAssignedTeam() == null ? "Unassigned"
+                        : escapeJson(report.getAssignedTeam().getId() + " - "
+                                + report.getAssignedTeam().getName()))
+                .append("\",\"travelTimeMinutes\":")
+                .append(report == null ? 0 : report.getTravelTimeMinutes())
+                .append(",\"estimatedRestorationTimeMinutes\":")
+                .append(report == null ? 0 : report.getEstimatedRestorationTimeMinutes())
+                .append(",\"affectedConsumersRestored\":")
+                .append(report != null && report.areAffectedConsumersRestored())
+                .append(",\"networkRestored\":").append(networkRestored)
+                .append(",\"affectedConsumers\":");
+            appendAffectedNodes(json, report, false);
+            json.append(",\"criticalFacilities\":");
+            appendAffectedNodes(json, report, true);
+            json.append('}');
         }
         json.append("],\"summary\":{\"totalNodes\":").append(nodes.size())
-            .append(",\"totalLines\":").append(lines.size()).append("}} ");
+            .append(",\"totalLines\":").append(lines.size())
+            .append(",\"networkRestored\":").append(networkRestored)
+            .append(",\"failedLineCount\":").append(countFailedLines())
+            .append(",\"disconnectedConsumers\":").append(countDisconnectedConsumers())
+            .append("}} ");
         return json.toString();
+    }
+
+    private int countFailedLines() {
+        int count = 0;
+        for (NetworkLine line : network.getLines()) {
+            if (line.getStatus() == LineStatus.FAILED) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int countDisconnectedConsumers() {
+        int count = 0;
+        for (NetworkNode node : outageDetector.findAffectedNodes(network)) {
+            if (node instanceof ConsumerArea) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void appendAffectedNodes(
+            StringBuilder json, FaultReport report, boolean criticalOnly) {
+        json.append('[');
+        if (report != null) {
+            boolean first = true;
+            for (NetworkNode node : report.getAffectedNodes()) {
+                boolean include = criticalOnly
+                        ? node instanceof CriticalArea : node instanceof ConsumerArea;
+                if (!include) {
+                    continue;
+                }
+                if (!first) {
+                    json.append(',');
+                }
+                first = false;
+                json.append("{\"id\":\"").append(escapeJson(node.getId()))
+                    .append("\",\"name\":\"").append(escapeJson(node.getName()))
+                    .append("\"}");
+            }
+        }
+        json.append(']');
     }
 
     private String buildHistoryPayload() throws IOException {
@@ -327,7 +434,101 @@ public class MainDashboard extends JFrame {
         return json.toString();
     }
 
+    private String buildBackupApprovalsPayload() {
+        StringBuilder json = new StringBuilder("{\"proposals\":[");
+        List<BackupLinkProposal> proposals = restorationPolicy.getBackupLinkProposals();
+        for (int i = 0; i < proposals.size(); i++) {
+            BackupLinkProposal proposal = proposals.get(i);
+            NetworkLine line = proposal.getBackupLine();
+            if (i > 0) {
+                json.append(',');
+            }
+            json.append("{\"lineId\":\"").append(escapeJson(line.getId()))
+                .append("\",\"failedLineId\":\"")
+                .append(escapeJson(proposal.getFailedLineId()))
+                .append("\",\"currentStatus\":\"")
+                .append(line.getStatus().name())
+                .append("\",\"approvalStatus\":\"")
+                .append(proposal.getApprovalStatus().name())
+                .append("\",\"path\":[");
+            for (int pathIndex = 0;
+                    pathIndex < proposal.getRestorationPath().size(); pathIndex++) {
+                if (pathIndex > 0) {
+                    json.append(',');
+                }
+                json.append('\"').append(escapeJson(
+                        proposal.getRestorationPath().get(pathIndex))).append('\"');
+            }
+            json.append("],\"affectedConsumers\":[");
+            for (int consumerIndex = 0;
+                    consumerIndex < proposal.getAffectedConsumers().size(); consumerIndex++) {
+                if (consumerIndex > 0) {
+                    json.append(',');
+                }
+                NetworkNode consumer = proposal.getAffectedConsumers().get(consumerIndex);
+                json.append("{\"id\":\"").append(escapeJson(consumer.getId()))
+                    .append("\",\"name\":\"").append(escapeJson(consumer.getName()))
+                    .append("\"}");
+            }
+            json.append("]}");
+        }
+        return json.append("]}").toString();
+    }
+
+    private void appendRestorationReport(StringBuilder json, FaultReport report) {
+        NetworkLine line = report.getFailedLine();
+        RepairTeam team = report.getAssignedTeam();
+        json.append("{\"lineId\":\"").append(escapeJson(line.getId()))
+            .append("\",\"lineStatus\":\"").append(line.getStatus().name())
+            .append("\",\"lineRepairCompleted\":").append(report.isLineRepairCompleted())
+            .append(",\"affectedConsumersRestored\":")
+            .append(report.areAffectedConsumersRestored())
+            .append(",\"networkFullyRestored\":")
+            .append(report.isNetworkFullyRestored())
+            .append(",\"affectedConsumers\":[");
+        boolean firstConsumer = true;
+        for (NetworkNode node : report.getAffectedNodes()) {
+            if (!(node instanceof ConsumerArea)) {
+                continue;
+            }
+            if (!firstConsumer) {
+                json.append(',');
+            }
+            firstConsumer = false;
+            json.append("{\"id\":\"").append(escapeJson(node.getId()))
+                .append("\",\"name\":\"").append(escapeJson(node.getName()))
+                .append("\"}");
+        }
+        json.append("],\"criticalFacilities\":[");
+        boolean firstCritical = true;
+        for (NetworkNode node : report.getAffectedNodes()) {
+            if (!(node instanceof CriticalArea)) {
+                continue;
+            }
+            if (!firstCritical) {
+                json.append(',');
+            }
+            firstCritical = false;
+            json.append("{\"id\":\"").append(escapeJson(node.getId()))
+                .append("\",\"name\":\"").append(escapeJson(node.getName()))
+                .append("\"}");
+        }
+        json.append("],\"assignedTeam\":");
+        if (team == null) {
+            json.append("null");
+        } else {
+            json.append("{\"id\":\"").append(escapeJson(team.getId()))
+                .append("\",\"name\":\"").append(escapeJson(team.getName()))
+                .append("\"}");
+        }
+        json.append(",\"repairTimeMinutes\":").append(report.getRepairTimeMinutes())
+            .append(",\"travelTimeMinutes\":").append(report.getTravelTimeMinutes())
+            .append(",\"estimatedRestorationTimeMinutes\":")
+            .append(report.getEstimatedRestorationTimeMinutes()).append('}');
+    }
+
     private String buildOutageQueuePayload() {
+        restorationPolicy.refreshRestorationStatuses(network, outageDetector);
         List<FaultReport> reports = new ArrayList<>();
         java.util.PriorityQueue<FaultReport> queue =
                 restorationPolicy.getPendingFaultQueue();
@@ -345,6 +546,13 @@ public class MainDashboard extends JFrame {
             NetworkLine line = report.getFailedLine();
             json.append("{\"faultId\":\"").append(escapeJson(line.getId()))
                 .append("-Fault\",\"lineId\":\"").append(escapeJson(line.getId()))
+                .append("\",\"lineStatus\":\"").append(line.getStatus().name())
+                .append("\",\"lineRepairStatus\":\"")
+                .append(report.isLineRepairCompleted() ? "LINE_REPAIRED" : "REPAIR_PENDING")
+                .append("\",\"affectedConsumersRestored\":")
+                .append(report.areAffectedConsumersRestored())
+                .append("\",\"networkFullyRestored\":")
+                .append(report.isNetworkFullyRestored())
                 .append("\",\"priorityScore\":").append(report.getPriorityScore())
                 .append(",\"affectedNodes\":[");
             List<NetworkNode> affectedNodes = report.getAffectedNodes();
@@ -357,7 +565,11 @@ public class MainDashboard extends JFrame {
                     .append("\",\"name\":\"").append(escapeJson(node.getName()))
                     .append("\"}");
             }
-            json.append("],\"assignedTeam\":");
+            json.append("],\"affectedConsumers\":");
+            appendAffectedNodes(json, report, false);
+            json.append(",\"criticalFacilities\":");
+            appendAffectedNodes(json, report, true);
+            json.append(",\"assignedTeam\":");
             if (team == null) {
                 json.append("null");
             } else {
@@ -365,10 +577,24 @@ public class MainDashboard extends JFrame {
                     .append("\",\"name\":\"").append(escapeJson(team.getName()))
                     .append("\"}");
             }
-            json.append(",\"estimatedRepairMinutes\":")
-                .append(report.getEstimatedRepairTimeMinutes())
+            json.append(",\"travelTimeMinutes\":")
+                .append(report.getTravelTimeMinutes())
+                .append(",\"repairTimeMinutes\":")
+                .append(report.getRepairTimeMinutes())
+                .append(",\"estimatedRestorationTimeMinutes\":")
+                .append(report.getEstimatedRestorationTimeMinutes())
+                .append(",\"estimatedRepairMinutes\":")
+                .append(report.getEstimatedRestorationTimeMinutes())
                 .append(",\"status\":\"").append(escapeJson(report.getTeamStatus()))
                 .append("\"}");
+        }
+        json.append("],\"restorationReports\":[");
+        List<FaultReport> allReports = restorationPolicy.getFaultReports();
+        for (int index = 0; index < allReports.size(); index++) {
+            if (index > 0) {
+                json.append(',');
+            }
+            appendRestorationReport(json, allReports.get(index));
         }
         return json.append("]}").toString();
     }
@@ -395,12 +621,20 @@ public class MainDashboard extends JFrame {
                 .append("\"status\":\"").append(escapeJson(team.getStatus().name())).append("\",")
                 .append("\"assignedFault\":");
             if (assignedReport == null) {
-                json.append("null,\"estimatedRepairMinutes\":null}");
+                json.append("null,\"travelTimeMinutes\":null,\"repairTimeMinutes\":null,")
+                    .append("\"estimatedRestorationTimeMinutes\":null,")
+                    .append("\"estimatedRepairMinutes\":null}");
             } else {
                 json.append("\"").append(escapeJson(
                         assignedReport.getFailedLine().getId())).append("\",")
+                    .append("\"travelTimeMinutes\":")
+                    .append(assignedReport.getTravelTimeMinutes()).append(',')
+                    .append("\"repairTimeMinutes\":")
+                    .append(assignedReport.getRepairTimeMinutes()).append(',')
+                    .append("\"estimatedRestorationTimeMinutes\":")
+                    .append(assignedReport.getEstimatedRestorationTimeMinutes()).append(',')
                     .append("\"estimatedRepairMinutes\":")
-                    .append(assignedReport.getEstimatedRepairTimeMinutes()).append('}');
+                    .append(assignedReport.getEstimatedRestorationTimeMinutes()).append('}');
             }
         }
         json.append("]}");
@@ -509,11 +743,14 @@ public class MainDashboard extends JFrame {
         private final String lineId;
         private final double voltage;
         private final LineStatus status;
+        private final int repairTimeMinutes;
 
-        private ManualLineEdit(String lineId, double voltage, LineStatus status) {
+        private ManualLineEdit(
+                String lineId, double voltage, LineStatus status, int repairTimeMinutes) {
             this.lineId = lineId;
             this.voltage = voltage;
             this.status = status;
+            this.repairTimeMinutes = repairTimeMinutes;
         }
     }
 
@@ -544,12 +781,33 @@ public class MainDashboard extends JFrame {
                 ACCENT, Color.WHITE));
         toolbar.add(createButton("Restore Grid", this::autoRestore,
                 new Color(226, 244, 238), new Color(20, 116, 82)));
+        toolbar.add(createButton("Backup Links", this::showBackupApprovals,
+                new Color(232, 240, 255), new Color(37, 83, 160)));
         toolbar.add(createButton("History", this::showHistory,
                 new Color(241, 245, 249), INK));
         toolbar.add(createButton("Reset", this::resetGrid,
                 new Color(254, 242, 242), new Color(185, 58, 58)));
         header.add(toolbar, BorderLayout.EAST);
-        add(header, BorderLayout.NORTH);
+        JPanel headerContainer = new JPanel(new BorderLayout(0, 10));
+        headerContainer.setOpaque(false);
+        headerContainer.add(header, BorderLayout.NORTH);
+        JPanel safetyPanel = new JPanel(new BorderLayout());
+        safetyPanel.setBackground(new Color(255, 248, 225));
+        safetyPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(232, 190, 82)),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+        JTextArea safetyText = new JTextArea(SafetyNotice.TEXT);
+        safetyText.setEditable(false);
+        safetyText.setFocusable(false);
+        safetyText.setLineWrap(true);
+        safetyText.setWrapStyleWord(true);
+        safetyText.setRows(3);
+        safetyText.setOpaque(false);
+        safetyText.setForeground(new Color(102, 71, 12));
+        safetyText.setFont(safetyText.getFont().deriveFont(Font.BOLD, 11f));
+        safetyPanel.add(safetyText, BorderLayout.CENTER);
+        headerContainer.add(safetyPanel, BorderLayout.SOUTH);
+        add(headerContainer, BorderLayout.NORTH);
 
         JPanel networkPanel = new JPanel(new BorderLayout(0, 12));
         networkPanel.setBackground(Color.WHITE);
@@ -561,7 +819,7 @@ public class MainDashboard extends JFrame {
         canvas.setBackground(new Color(250, 252, 254));
         canvas.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         canvas.setSensorMonitor(sensorMonitor);
-        canvas.setAfterEdit(this::runDetection);
+        canvas.setAfterEdit(this::runDetectionAfterEdit);
         JScrollPane canvasScrollPane = new JScrollPane(canvas);
         canvasScrollPane.setBorder(BorderFactory.createLineBorder(
                 new Color(231, 236, 242)));
@@ -646,24 +904,46 @@ public class MainDashboard extends JFrame {
     }
 
     private void runDetection() {
+        runDetection(null);
+    }
+
+    private void runDetectionAfterEdit(NetworkLine editedLine) {
+        runDetection(editedLine != null && editedLine.getStatus() == LineStatus.FAILED
+                ? editedLine.getId() : null);
+    }
+
+    private void runDetection(String lineWithOperatorEnteredRepairTime) {
         try {
-            runDetectionCore();
+            runDetectionCore(lineWithOperatorEnteredRepairTime);
         } catch (UncheckedIOException exception) {
             showError(exception.getMessage());
         }
     }
 
     private void runDetectionCore() {
+        runDetectionCore(null);
+    }
+
+    private void runDetectionCore(String lineWithOperatorEnteredRepairTime) {
         OutageDiagnostics diagnostics = outageDetector.detectFaults(network, sensorMonitor);
         int newFaults = 0;
         for (NetworkLine line : diagnostics.getFaultedLines()) {
             if (!restorationPolicy.isPendingFault(line)) {
+                if (!line.getId().equals(lineWithOperatorEnteredRepairTime)) {
+                    Integer repairMinutes = promptRepairTime(line);
+                    if (repairMinutes == null) {
+                        line.restoreLine();
+                        sensorMonitor.clearAnomaly(line.getId());
+                        continue;
+                    }
+                    line.setRepairTimeMinutes(repairMinutes);
+                }
                 recordFaultReport(line, diagnostics.getAffectedNodes());
                 newFaults++;
             }
         }
         lastAffectedNodes.clear();
-        lastAffectedNodes.addAll(diagnostics.getAffectedNodes());
+        lastAffectedNodes.addAll(outageDetector.findAffectedNodes(network));
         refreshDashboard();
         statusLabel.setText("Detection complete | " + lastAffectedNodes.size()
                 + " affected node(s) | " + newFaults + " new fault(s)");
@@ -672,6 +952,10 @@ public class MainDashboard extends JFrame {
     private void autoRestore() {
         if (restorationPolicy.getPendingFaultCount() == 0) {
             showMessage("There are no pending faults to restore.");
+            return;
+        }
+        if (restorationPolicy.hasPendingBackupApprovalDecision()) {
+            showMessage("Review each proposed backup link in Backup Links before continuing repair.");
             return;
         }
         try {
@@ -688,13 +972,37 @@ public class MainDashboard extends JFrame {
         if (restorationPolicy.getPendingFaultCount() == 0) {
             throw new IllegalStateException("There are no pending faults to restore.");
         }
+        if (restorationPolicy.hasPendingBackupApprovalDecision()) {
+            throw new IllegalStateException(
+                    "Review each proposed backup link before continuing repair.");
+        }
         autoRestoreCore();
+    }
+
+    private void approveBackupFromApi(String lineId) {
+        restorationPolicy.approveBackupLink(lineId);
+        refreshDashboard();
+    }
+
+    private void rejectBackupFromApi(String lineId) {
+        restorationPolicy.rejectBackupLink(lineId);
+        refreshDashboard();
+    }
+
+    private void activateBackupFromApi(String lineId) {
+        int affectedCount = restorationPolicy.activateApprovedBackupLink(
+                lineId, network, outageDetector);
+        lastAffectedNodes.clear();
+        lastAffectedNodes.addAll(outageDetector.findAffectedNodes(network));
+        statusLabel.setText("Backup BFS verified | " + affectedCount
+                + " affected consumer(s) remain");
+        refreshDashboard();
     }
 
     private void autoRestoreCore() {
         boolean restored = restorationPolicy.restoreNextFault(network, outageDetector);
         for (FaultReport report : restorationPolicy.getHistory()) {
-            if (report.isRestored()) {
+            if (report.isLineRepairCompleted()) {
                 sensorMonitor.clearAnomaly(report.getFailedLine().getId());
             }
         }
@@ -732,17 +1040,22 @@ public class MainDashboard extends JFrame {
                     "Only backup lines can be placed in STANDBY.");
         }
 
+        if (line.isBackupLink() && edit.status == LineStatus.WORKING
+                && line.getBackupApprovalStatus() != BackupApprovalStatus.ACTIVE) {
+            throw new IllegalArgumentException(
+                    "Backup links must be approved and activated through Backup Links.");
+        }
+
         if (edit.status == LineStatus.FAILED) {
-            line.failLine();
+            line.failLine(edit.repairTimeMinutes);
         } else if (edit.status == LineStatus.STANDBY) {
             if (line.getStatus() == LineStatus.FAILED) {
                 line.restoreLine();
             }
             line.deactivateBackup();
         } else {
-            line.restoreLine();
-            if (line.isBackupLink()) {
-                line.activateBackup();
+            if (!line.isBackupLink()) {
+                line.restoreLine();
             }
         }
 
@@ -752,9 +1065,11 @@ public class MainDashboard extends JFrame {
                     line.getId(), reading.getNormalVoltage(), reading.getNormalCurrent(),
                     edit.voltage, reading.getObservedCurrent()));
         }
-        runDetectionCore();
+        runDetectionCore(edit.status == LineStatus.FAILED ? line.getId() : null);
         statusLabel.setText("Manual update applied | " + line.getId()
-                + " " + line.getStatus() + " | " + edit.voltage + " V");
+                + " " + line.getStatus() + " | " + edit.voltage + " V"
+                + (line.getStatus() == LineStatus.FAILED
+                        ? " | repair " + line.getRepairTimeMinutes() + " min" : ""));
     }
 
     private void applyNodeVoltageEdit(NodeVoltageEdit edit) {
@@ -774,6 +1089,23 @@ public class MainDashboard extends JFrame {
     private boolean isNodeVoltageAlert(double voltage) {
         return voltage < NORMAL_VOLTAGE
                 * (1 - VOLTAGE_DROP_THRESHOLD_PERCENT / 100);
+    }
+
+    private Integer promptRepairTime(NetworkLine line) {
+        while (true) {
+            String value = JOptionPane.showInputDialog(this,
+                    "Enter estimated repair time for " + line.getId()
+                            + " in positive whole minutes:",
+                    Integer.toString(line.getRepairTimeMinutes()));
+            if (value == null) {
+                return null;
+            }
+            try {
+                return RepairTimeInput.parsePositiveMinutes(value);
+            } catch (IllegalArgumentException exception) {
+                showError(exception.getMessage());
+            }
+        }
     }
 
     private void recordFaultReport(NetworkLine line, List<NetworkNode> affectedNodes) {
@@ -810,7 +1142,7 @@ public class MainDashboard extends JFrame {
     }
 
     private void refreshDashboard() {
-        statusSummaryPanel.refreshData(network, restorationPolicy.getPendingFaultQueue());
+        statusSummaryPanel.refreshData(network, restorationPolicy, outageDetector);
         canvas.repaint();
     }
 
@@ -822,6 +1154,125 @@ public class MainDashboard extends JFrame {
     private void showError(String message) {
         JOptionPane.showMessageDialog(this, message, "Invalid Update",
                 JOptionPane.ERROR_MESSAGE);
+    }
+
+    private void showBackupApprovals() {
+        DefaultTableModel model = new DefaultTableModel(
+                new Object[] {"Backup line", "Current status", "Proposed path",
+                    "Approval status", "Affected consumers"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        JTable table = new JTable(model);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        JButton approveButton = createButton("Approve", () -> { },
+                new Color(226, 244, 238), new Color(20, 116, 82));
+        JButton rejectButton = createButton("Reject", () -> { },
+                new Color(254, 242, 242), new Color(185, 58, 58));
+        JButton activateButton = createButton("Activate approved link", () -> { },
+                new Color(232, 240, 255), new Color(37, 83, 160));
+        JButton closeButton = createButton("Close", () -> { },
+                new Color(241, 245, 249), INK);
+
+        JDialog dialog = new JDialog(this, "Backup Link Approval", true);
+        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+        JPanel content = new JPanel(new BorderLayout(0, 12));
+        content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        content.add(new JScrollPane(table), BorderLayout.CENTER);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        actions.add(approveButton);
+        actions.add(rejectButton);
+        actions.add(activateButton);
+        actions.add(closeButton);
+        content.add(actions, BorderLayout.SOUTH);
+        dialog.setContentPane(content);
+        dialog.setSize(1050, 380);
+        dialog.setLocationRelativeTo(this);
+
+        Runnable refillRows = () -> {
+            model.setRowCount(0);
+            for (BackupLinkProposal proposal : restorationPolicy.getBackupLinkProposals()) {
+                String consumers = proposal.getAffectedConsumers().stream()
+                        .map(node -> node.getId() + " (" + node.getName() + ")")
+                        .collect(java.util.stream.Collectors.joining(", "));
+                model.addRow(new Object[] {
+                    proposal.getBackupLineId(), proposal.getBackupLine().getStatus(),
+                    String.join(" -> ", proposal.getRestorationPath()),
+                    proposal.getApprovalStatus(), consumers
+                });
+            }
+        };
+        Runnable updateActionStates = () -> {
+            int row = table.getSelectedRow();
+            boolean selected = row >= 0;
+            String approval = selected
+                    ? String.valueOf(model.getValueAt(row, 3)) : "";
+            approveButton.setEnabled("PROPOSED".equals(approval));
+            rejectButton.setEnabled("PROPOSED".equals(approval)
+                    || "APPROVED".equals(approval));
+            activateButton.setEnabled("APPROVED".equals(approval));
+        };
+        java.util.function.Supplier<BackupLinkProposal> selectedProposal = () -> {
+            int row = table.getSelectedRow();
+            if (row < 0) {
+                throw new IllegalStateException("Select a backup proposal first.");
+            }
+            String lineId = String.valueOf(model.getValueAt(row, 0));
+            for (BackupLinkProposal proposal : restorationPolicy.getBackupLinkProposals()) {
+                if (proposal.getBackupLineId().equals(lineId)) {
+                    return proposal;
+                }
+            }
+            throw new IllegalStateException("The selected backup proposal is no longer current.");
+        };
+        table.getSelectionModel().addListSelectionListener(event -> updateActionStates.run());
+        approveButton.addActionListener(event -> {
+            try {
+                BackupLinkProposal proposal = selectedProposal.get();
+                restorationPolicy.approveBackupLink(proposal.getBackupLineId());
+                statusLabel.setText(proposal.getBackupLineId() + " approved; awaiting activation.");
+                refillRows.run();
+                updateActionStates.run();
+                refreshDashboard();
+            } catch (RuntimeException exception) {
+                showError(exception.getMessage());
+            }
+        });
+        rejectButton.addActionListener(event -> {
+            try {
+                BackupLinkProposal proposal = selectedProposal.get();
+                restorationPolicy.rejectBackupLink(proposal.getBackupLineId());
+                statusLabel.setText(proposal.getBackupLineId() + " rejected and remains inactive.");
+                refillRows.run();
+                updateActionStates.run();
+                refreshDashboard();
+            } catch (RuntimeException exception) {
+                showError(exception.getMessage());
+            }
+        });
+        activateButton.addActionListener(event -> {
+            try {
+                BackupLinkProposal proposal = selectedProposal.get();
+                int affected = restorationPolicy.activateApprovedBackupLink(
+                        proposal.getBackupLineId(), network, outageDetector);
+                lastAffectedNodes.clear();
+                lastAffectedNodes.addAll(outageDetector.findAffectedNodes(network));
+                statusLabel.setText("Backup BFS verified | " + affected
+                        + " affected consumer(s) remain");
+                refillRows.run();
+                updateActionStates.run();
+                refreshDashboard();
+            } catch (RuntimeException exception) {
+                showError(exception.getMessage());
+            }
+        });
+        closeButton.addActionListener(event -> dialog.dispose());
+
+        refillRows.run();
+        updateActionStates.run();
+        dialog.setVisible(true);
     }
 
     private void showHistory() {

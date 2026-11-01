@@ -11,6 +11,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 
@@ -20,13 +21,26 @@ public class StatusSummaryPanel extends JPanel {
     private static final Color BORDER = new Color(226, 232, 240);
     private final OutageSummaryModel outageModel = new OutageSummaryModel();
     private final RepairQueueModel repairQueueModel = new RepairQueueModel();
+    private final JLabel restorationStatus = new JLabel("Entire network restored: YES");
 
     public StatusSummaryPanel() {
-        super(new GridLayout(2, 1, 0, 14));
+        super(new BorderLayout(0, 10));
         setBackground(new Color(246, 248, 251));
-        add(createTablePanel("OUTAGE SUMMARY", createTable(outageModel)));
-        add(createTablePanel("REPAIR QUEUE & TEAM STATUS",
+        restorationStatus.setOpaque(true);
+        restorationStatus.setBackground(Color.WHITE);
+        restorationStatus.setForeground(INK);
+        restorationStatus.setFont(restorationStatus.getFont().deriveFont(Font.BOLD, 12f));
+        restorationStatus.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+        add(restorationStatus, BorderLayout.NORTH);
+
+        JPanel tables = new JPanel(new GridLayout(2, 1, 0, 14));
+        tables.setOpaque(false);
+        tables.add(createTablePanel("OUTAGE SUMMARY", createTable(outageModel)));
+        tables.add(createTablePanel("FAULT REPAIR & RESTORATION TRACKING",
                 createTable(repairQueueModel)));
+        add(tables, BorderLayout.CENTER);
     }
 
     public void refreshData(
@@ -36,6 +50,21 @@ public class StatusSummaryPanel extends JPanel {
         }
         outageModel.refresh(network);
         repairQueueModel.refresh(queue);
+    }
+
+    public void refreshData(
+            DistributionNetwork network,
+            RestorationPolicy policy,
+            OutageDetector detector) {
+        if (network == null || policy == null || detector == null) {
+            throw new IllegalArgumentException(
+                    "network, policy, and detector must not be null.");
+        }
+        boolean fullyRestored = policy.isNetworkFullyRestored(network, detector);
+        outageModel.refresh(network);
+        repairQueueModel.refresh(policy.getFaultReports());
+        restorationStatus.setText("Entire network restored: "
+                + (fullyRestored ? "YES" : "NO"));
     }
 
     private JTable createTable(AbstractTableModel model) {
@@ -126,7 +155,8 @@ public class StatusSummaryPanel extends JPanel {
 
     private class RepairQueueModel extends AbstractTableModel {
         private final String[] columns = {
-            "Line ID", "Fault Zone", "Priority", "Dispatched Team", "ETA (mins)"
+            "Line ID", "Line state", "Line repair", "Affected consumers",
+            "Critical facilities", "Repair team", "Repair / Travel / ETA (min)"
         };
         private final List<Object[]> rows = new ArrayList<>();
 
@@ -134,18 +164,44 @@ public class StatusSummaryPanel extends JPanel {
             rows.clear();
             PriorityQueue<FaultReport> orderedQueue = new PriorityQueue<>(queue);
             while (!orderedQueue.isEmpty()) {
-                FaultReport report = orderedQueue.poll();
-                RepairTeam team = report.getAssignedTeam();
-                rows.add(new Object[] {
-                    report.getFailedLine().getId(),
-                    report.getFailedLine().getFaultZone(),
-                    report.getPriorityScore(),
-                    team == null ? "Unassigned" : team.getId() + " - " + team.getName(),
-                    report.getEstimatedRepairMinutes() == 0
-                            ? "-" : report.getEstimatedRepairMinutes()
-                });
+                addReportRow(orderedQueue.poll());
             }
             fireTableDataChanged();
+        }
+
+        private void refresh(List<FaultReport> reports) {
+            rows.clear();
+            for (FaultReport report : reports) {
+                addReportRow(report);
+            }
+            fireTableDataChanged();
+        }
+
+        private void addReportRow(FaultReport report) {
+                RepairTeam team = report.getAssignedTeam();
+                List<String> criticalFacilities = new ArrayList<>();
+                int affectedConsumers = 0;
+                for (NetworkNode node : report.getAffectedNodes()) {
+                    if (node instanceof ConsumerArea) {
+                        affectedConsumers++;
+                    }
+                    if (node instanceof CriticalArea) {
+                        criticalFacilities.add(node.getId());
+                    }
+                }
+                rows.add(new Object[] {
+                    report.getFailedLine().getId(),
+                    report.getFailedLine().getStatus(),
+                    report.isLineRepairCompleted() ? "REPAIRED" : "PENDING",
+                    affectedConsumers + " | " + (report.areAffectedConsumersRestored()
+                            ? "RESTORED" : "DISCONNECTED"),
+                    criticalFacilities.isEmpty() ? "-"
+                            : String.join(", ", criticalFacilities),
+                    team == null ? "Unassigned" : team.getId() + " - " + team.getName(),
+                    report.getRepairTimeMinutes() + " / " + report.getTravelTimeMinutes()
+                            + " / "
+                            + report.getEstimatedRestorationTimeMinutes()
+                });
         }
 
         @Override

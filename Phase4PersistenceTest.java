@@ -26,6 +26,7 @@ public class Phase4PersistenceTest {
             if (!diagnostics.getFaultedLines().contains(failedLine)) {
                 throw new AssertionError("Expected sensor fault detection to fail L1.");
             }
+            failedLine.setRepairTimeMinutes(35);
 
             FaultReport report = new FaultReport(
                     failedLine, diagnostics.getAffectedNodes());
@@ -39,8 +40,16 @@ public class Phase4PersistenceTest {
             events = historyManager.loadHistory();
             assertEquals(4, events.size(), "persisted event count");
             assertEquals("FAULT_DETECTED", events.get(1)[1], "fault event type");
-            assertEquals("BACKUP_PLAN_ACTIVATED", events.get(2)[1], "backup event type");
+            assertEquals("BACKUP_LINK_PROPOSED", events.get(2)[1], "backup proposal event type");
             assertEquals("REPAIR_COMPLETED", events.get(3)[1], "repair event type");
+            assertEquals(LineStatus.STANDBY, network.getLine("L14").getStatus(),
+                    "standby backup must remain inactive unless an operator approves it");
+            if (!events.get(3)[5].contains("TRAVEL_TIME=15m")
+                    || !events.get(3)[5].contains("REPAIR_TIME=35m")
+                    || !events.get(3)[5].contains("ESTIMATED_RESTORATION=50m")) {
+                throw new AssertionError(
+                        "Repair, travel, and total ETA should be persisted in repair history.");
+            }
 
             String header = new String(
                     Files.readAllBytes(historyFile), StandardCharsets.UTF_8).split("\\R", 2)[0];

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.Map;
 import javax.swing.SwingUtilities;
 import javax.swing.JPanel;
@@ -29,7 +30,7 @@ public class NetworkCanvas extends JPanel {
     private final OutageDetector outageDetector = new OutageDetector();
     private final Map<NetworkNode, Point> nodeCoordinates = new HashMap<>();
     private SensorMonitor sensorMonitor;
-    private Runnable afterEdit = () -> { };
+    private Consumer<NetworkLine> afterEdit = line -> { };
     private NetworkNode selectedNode;
     private NetworkLine selectedLine;
 
@@ -135,8 +136,8 @@ public class NetworkCanvas extends JPanel {
         this.sensorMonitor = sensorMonitor;
     }
 
-    public void setAfterEdit(Runnable afterEdit) {
-        this.afterEdit = afterEdit == null ? () -> { } : afterEdit;
+    public void setAfterEdit(Consumer<NetworkLine> afterEdit) {
+        this.afterEdit = afterEdit == null ? line -> { } : afterEdit;
     }
 
     public void setSelectedElement(NetworkNode node, NetworkLine line) {
@@ -157,10 +158,10 @@ public class NetworkCanvas extends JPanel {
         }
         Window owner = SwingUtilities.getWindowAncestor(this);
         EditStatusDialog dialog = new EditStatusDialog(
-                owner, network, node, incidentLines, sensorMonitor, () -> {
+                owner, network, node, incidentLines, sensorMonitor, editedLine -> {
                     outageDetector.findAffectedNodes(network);
                     repaint();
-                    afterEdit.run();
+                    afterEdit.accept(editedLine);
                 });
         dialog.setVisible(true);
     }

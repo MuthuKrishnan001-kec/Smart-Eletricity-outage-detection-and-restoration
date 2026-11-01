@@ -3,6 +3,7 @@ import java.awt.Dialog;
 import java.awt.GridLayout;
 import java.awt.Window;
 import java.util.List;
+import java.util.function.Consumer;
 import javax.swing.ButtonGroup;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
@@ -17,12 +18,14 @@ import javax.swing.JButton;
 public class EditStatusDialog extends JDialog {
     private final JComboBox<NetworkLine> lineSelector;
     private final JSpinner voltageSpinner;
+    private final JSpinner repairTimeSpinner;
+    private final JLabel repairTimeLabel = new JLabel("Estimated repair time (minutes):");
     private final JRadioButton workingButton = new JRadioButton("WORKING");
     private final JRadioButton failedButton = new JRadioButton("FAILED");
     private final JRadioButton standbyButton = new JRadioButton("STANDBY");
     private final DistributionNetwork network;
     private final SensorMonitor sensorMonitor;
-    private final Runnable applyCallback;
+    private final Consumer<NetworkLine> applyCallback;
 
     public EditStatusDialog(
             Window owner,
@@ -30,7 +33,7 @@ public class EditStatusDialog extends JDialog {
             NetworkNode node,
             List<NetworkLine> candidateLines,
             SensorMonitor sensorMonitor,
-            Runnable applyCallback) {
+            Consumer<NetworkLine> applyCallback) {
         super(owner, "Edit Network Status", Dialog.ModalityType.APPLICATION_MODAL);
         if (network == null || candidateLines == null || candidateLines.isEmpty()
                 || sensorMonitor == null) {
@@ -39,9 +42,12 @@ public class EditStatusDialog extends JDialog {
         }
         this.network = network;
         this.sensorMonitor = sensorMonitor;
-        this.applyCallback = applyCallback == null ? () -> { } : applyCallback;
+        this.applyCallback = applyCallback == null ? line -> { } : applyCallback;
         lineSelector = new JComboBox<>(candidateLines.toArray(new NetworkLine[0]));
         voltageSpinner = new JSpinner(new SpinnerNumberModel(230.0, 0.0, 1000.0, 1.0));
+        repairTimeSpinner = new JSpinner(new SpinnerNumberModel(
+                Math.max(1, candidateLines.get(0).getRepairTimeMinutes()),
+                1, Integer.MAX_VALUE, 1));
         buildInterface(node);
         loadSelectedLine();
         lineSelector.addActionListener(event -> loadSelectedLine());
@@ -73,11 +79,17 @@ public class EditStatusDialog extends JDialog {
         statusPanel.add(standbyButton);
         fields.add(new JLabel("Status:"));
         fields.add(statusPanel);
+        fields.add(repairTimeLabel);
+        fields.add(repairTimeSpinner);
 
         JButton applyButton = new JButton("Apply Changes");
         applyButton.addActionListener(event -> applyChanges());
         JPanel actions = new JPanel();
         actions.add(applyButton);
+
+        failedButton.addActionListener(event -> updateRepairTimeAvailability());
+        workingButton.addActionListener(event -> updateRepairTimeAvailability());
+        standbyButton.addActionListener(event -> updateRepairTimeAvailability());
 
         setLayout(new BorderLayout(8, 8));
         add(fields, BorderLayout.CENTER);
@@ -93,6 +105,7 @@ public class EditStatusDialog extends JDialog {
         if (reading != null) {
             voltageSpinner.setValue(reading.getObservedVoltage());
         }
+        repairTimeSpinner.setValue(line.getRepairTimeMinutes());
         workingButton.setSelected(line.getStatus() == LineStatus.WORKING);
         failedButton.setSelected(line.getStatus() == LineStatus.FAILED);
         standbyButton.setSelected(line.getStatus() == LineStatus.STANDBY);
@@ -100,6 +113,13 @@ public class EditStatusDialog extends JDialog {
         if (!line.isBackupLink() && line.getStatus() == LineStatus.STANDBY) {
             workingButton.setSelected(true);
         }
+        updateRepairTimeAvailability();
+    }
+
+    private void updateRepairTimeAvailability() {
+        boolean enabled = failedButton.isSelected();
+        repairTimeLabel.setEnabled(enabled);
+        repairTimeSpinner.setEnabled(enabled);
     }
 
     private void applyChanges() {
@@ -111,7 +131,7 @@ public class EditStatusDialog extends JDialog {
         }
 
         if (failedButton.isSelected()) {
-            line.failLine();
+            line.failLine(((Number) repairTimeSpinner.getValue()).intValue());
         } else if (standbyButton.isSelected()) {
             if (!line.isBackupLink()) {
                 JOptionPane.showMessageDialog(this,
@@ -137,7 +157,7 @@ public class EditStatusDialog extends JDialog {
                     line.getId(), previous.getNormalVoltage(), previous.getNormalCurrent(),
                     voltage, previous.getObservedCurrent()));
         }
-        applyCallback.run();
+        applyCallback.accept(line);
         setVisible(false);
         dispose();
     }

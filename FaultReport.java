@@ -12,8 +12,10 @@ public class FaultReport {
     private int priorityScore;
     private RepairTeam assignedTeam;
     private String teamStatus = "WAITING";
-    private boolean restored;
-    private int estimatedRepairMinutes;
+    private boolean lineRepairCompleted;
+    private boolean affectedConsumersRestored;
+    private boolean networkFullyRestored;
+    private int travelTimeMinutes;
     private Runnable priorityChangeListener = () -> { };
 
     public FaultReport(NetworkLine failedLine, List<NetworkNode> affectedNodes) {
@@ -99,6 +101,18 @@ public class FaultReport {
         return count;
     }
 
+    public boolean isLineRepairCompleted() {
+        return lineRepairCompleted;
+    }
+
+    public boolean areAffectedConsumersRestored() {
+        return affectedConsumersRestored;
+    }
+
+    public boolean isNetworkFullyRestored() {
+        return networkFullyRestored;
+    }
+
     public long getReportOrder() {
         return reportOrder;
     }
@@ -128,20 +142,40 @@ public class FaultReport {
         this.teamStatus = Objects.requireNonNull(teamStatus, "teamStatus");
     }
 
-    public int getEstimatedRepairMinutes() {
-        return estimatedRepairMinutes;
+    public int getRepairTimeMinutes() {
+        return failedLine.getRepairTimeMinutes();
     }
 
     public int getEstimatedRepairTimeMinutes() {
-        return estimatedRepairMinutes;
+        return getEstimatedRestorationTimeMinutes();
     }
 
-    public void setEstimatedRepairTimeMinutes(int estimatedRepairTimeMinutes) {
-        if (estimatedRepairTimeMinutes < 0) {
-            throw new IllegalArgumentException(
-                    "estimatedRepairTimeMinutes must not be negative.");
+    public int getEstimatedRepairMinutes() {
+        return getEstimatedRestorationTimeMinutes();
+    }
+
+    public int getTravelTimeMinutes() {
+        return travelTimeMinutes;
+    }
+
+    public int getEstimatedRestorationTimeMinutes() {
+        return Math.addExact(getRepairTimeMinutes(), travelTimeMinutes);
+    }
+
+    public void setTravelTimeMinutes(int travelTimeMinutes) {
+        if (travelTimeMinutes < 0) {
+            throw new IllegalArgumentException("travelTimeMinutes must not be negative.");
         }
-        this.estimatedRepairMinutes = estimatedRepairTimeMinutes;
+        this.travelTimeMinutes = travelTimeMinutes;
+    }
+
+    /** Compatibility setter; its value represents the total restoration estimate. */
+    public void setEstimatedRepairTimeMinutes(int estimatedRepairTimeMinutes) {
+        if (estimatedRepairTimeMinutes < getRepairTimeMinutes()) {
+            throw new IllegalArgumentException(
+                    "Estimated restoration time cannot be less than repair time.");
+        }
+        setTravelTimeMinutes(estimatedRepairTimeMinutes - getRepairTimeMinutes());
     }
 
     public void setEstimatedRepairMinutes(int estimatedRepairMinutes) {
@@ -154,10 +188,22 @@ public class FaultReport {
     }
 
     public boolean isRestored() {
-        return restored;
+        return affectedConsumersRestored;
     }
 
     public void markRestored() {
-        restored = true;
+        lineRepairCompleted = true;
+        affectedConsumersRestored = true;
+        networkFullyRestored = true;
+    }
+
+    void markLineRepairCompleted() {
+        lineRepairCompleted = true;
+    }
+
+    void updateRestorationStatus(
+            boolean consumersRestored, boolean networkRestored) {
+        affectedConsumersRestored = consumersRestored;
+        networkFullyRestored = networkRestored;
     }
 }

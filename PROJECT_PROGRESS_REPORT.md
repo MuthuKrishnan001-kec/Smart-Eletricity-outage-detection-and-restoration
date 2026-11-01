@@ -136,21 +136,25 @@ the six-column CSV header on first use, quotes CSV fields safely, and loads even
 the dashboard's History table. `SensorMonitor` and `RestorationPolicy` receive the same
 manager from `MainDashboard`; persistence errors are surfaced rather than ignored.
 
-[ScenarioTestRunner.java](ScenarioTestRunner.java) runs 15 reproducible line and
-substation-failure scenarios on the 20-node demonstration network. It measures outage
-detection BFS and restoration backup-path search with `System.nanoTime()` and prints
-their combined latency in milliseconds. Run it from the project root with:
+[ScenarioTestRunner.java](ScenarioTestRunner.java) runs 16 reproducible normal, line,
+multi-line, sensor-trip, and substation scenarios on the 20-node demonstration network.
+It asserts expected disconnected nodes, affected critical facilities, and backup paths,
+and measures BFS and restoration-path search with `System.nanoTime()`. Run it from the
+project root with:
 `javac *.java` followed by `java ScenarioTestRunner`.
 
 Standalone verification programs are also present:
 [Phase1StabilizationTest.java](Phase1StabilizationTest.java),
 [Phase2CoreAlgorithmTest.java](Phase2CoreAlgorithmTest.java), and
-[Phase4PersistenceTest.java](Phase4PersistenceTest.java). Run them from the
-project root after compiling with `javac *.java`.
+[Phase4PersistenceTest.java](Phase4PersistenceTest.java),
+[RepairTimeIntegrationTest.java](RepairTimeIntegrationTest.java),
+[BackupApprovalTest.java](BackupApprovalTest.java), and
+[FinalHardeningTest.java](FinalHardeningTest.java). Run them from the project root after
+compiling with `javac *.java`.
 
 ## Strengths of the Current Implementation
 - Clear separation of concerns between network, outage detection, sensors, and restoration
-- Graph-based network modeling suited for electrical network analysis
+- Graph-based network modeling for connectivity simulation
 - Realistic handling of backup links and repair operations
 - Demonstration mode with predefined critical infrastructure and consumer areas
 - Priority-based restoration workflow
@@ -168,17 +172,59 @@ project root after compiling with `javac *.java`.
   and extended outage scenarios.
 
 ## Next Recommended Steps
-1. Run all three verification programs and the 15-scenario runner as a final
-   Review 2 regression check.
-2. Add browser/API integration checks for live refresh and dashboard operations.
-3. Improve network configuration flexibility with file-based or GUI-based input.
-4. Extend damage and restoration analytics and evaluate restoration across
+1. Add browser/API integration checks for live refresh and dashboard operations.
+2. Improve network configuration flexibility with file-based or GUI-based input.
+3. Extend damage and restoration analytics and evaluate restoration across
    broader multi-outage scenarios.
 
 ## Conclusion
 The project has reached an integrated, review-ready prototype stage. Its
 network simulation, outage detection, sensor checks, restoration workflow,
 repair-team assignment, history persistence, Swing interface, and browser
-dashboard are in place. The next priority is to run the existing verification
-programs together and validate the browser/API workflow before expanding
-configuration or production capabilities.
+dashboard are in place. The final hardening regression programs pass, and the
+next priority is browser/API integration coverage before expanding configuration
+or production capabilities.
+
+## Final Hardening Results
+
+The console, Swing dashboard, and every browser page now show the same electrical
+safety notice. It identifies this project as a software simulation, limits BFS
+to possible graph paths, states that electrical quantities and protection
+coordination are not calculated, and prohibits use for real equipment operation.
+
+Restoration status is tracked in three separate fields: line repair completed,
+the report's affected consumers restored, and the entire network restored. The
+shared restoration policy recalculates report status after repair, backup-link
+activation, and new faults. Whole-network restoration requires every graph node
+to be reachable and no failed line to remain. Standby, proposed, approved, and
+rejected backup links remain inactive during BFS; only an explicitly approved
+and activated link participates in connectivity checks.
+
+The documented scenario runs distinguish scenarios from fault/update events:
+
+- `ScenarioTestRunner`: 16 scenarios and 22 fault/update events. It checks
+  expected disconnected node IDs, critical facilities, and backup-link paths.
+- `FinalHardeningTest`: 16 scenarios and 33 fault/update events. It checks
+  priority, team assignment, operator repair time and ETA, approval and
+  rejection, backup activation, sequential repairs, restoration states, and
+  CSV history persistence.
+
+Final Java regression results:
+
+| Program | Result |
+| --- | --- |
+| `javac *.java` | PASS |
+| `Phase1StabilizationTest` | PASS (5/5 checks) |
+| `Phase2CoreAlgorithmTest` | PASS (6/6 checks) |
+| `Phase4PersistenceTest` | PASS |
+| `RepairTimeIntegrationTest` | PASS (3/3 checks) |
+| `BackupApprovalTest` | PASS (13/13 checks) |
+| `ScenarioTestRunner` | PASS (16/16 scenarios, 22 events) |
+| `FinalHardeningTest` | PASS (16/16 scenarios, 33 events) |
+| `git diff --check` | PASS |
+
+The network remains a graph-connectivity simulation. It does not perform real
+voltage, current, load-flow, line-capacity, or protection-coordination analysis.
+Browser-level JavaScript execution checks were unavailable in the environment
+because Node.js is not installed; the Java API and frontend data fields were
+reviewed for consistency.

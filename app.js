@@ -27,6 +27,7 @@ function fetchNetworkState() {
   return requestJson('/network').then((payload) => {
     currentNetworkState = payload;
     renderGridStatus(payload);
+    renderNetworkLines(payload);
     const canvas = document.getElementById('networkCanvas');
     if (!canvas) {
       return payload;
@@ -48,10 +49,12 @@ function renderGridStatus(payload) {
   const affectedCriticalFacilities = criticalFacilities.filter((facility) =>
     !facility.powered);
 
-  if (affectedCriticalFacilities.length > 0) {
+  if (payload.summary && payload.summary.networkRestored === true) {
+    setGridStatus('Network Restored', 'is-stable');
+  } else if (affectedCriticalFacilities.length > 0) {
     setGridStatus('Critical Impact', 'is-critical');
   } else if (failedLines.length > 0 || nodes.some((node) => !node.powered)) {
-    setGridStatus('Outage Detected', 'is-outage');
+    setGridStatus('Restoration Incomplete', 'is-outage');
   } else {
     setGridStatus('Grid Stable', 'is-stable');
   }
@@ -84,6 +87,13 @@ function fetchRepairTeams() {
 function fetchHistory() {
   return requestJson('/history').then((payload) => {
     renderHistory(payload);
+    return payload;
+  });
+}
+
+function fetchBackupApprovals() {
+  return requestJson('/backup-approvals').then((payload) => {
+    renderBackupApprovals(payload);
     return payload;
   });
 }
@@ -311,6 +321,17 @@ function setEditLine(lineId) {
     ? 'WORKING'
     : line.status;
   document.getElementById('editVoltage').value = line.observedVoltage ?? 230;
+  document.getElementById('repairTimeMinutes').value = line.repairTimeMinutes ?? '';
+  updateRepairTimeField();
+}
+
+function updateRepairTimeField() {
+  const failed = !currentEditNodeId
+    && document.getElementById('editStatus').value === 'FAILED';
+  const field = document.getElementById('repairTimeField');
+  const input = document.getElementById('repairTimeMinutes');
+  field.hidden = !failed;
+  input.required = failed;
 }
 
 function openEditModal(selection) {
@@ -359,18 +380,35 @@ function applyManualEdit(event) {
   const lineId = document.getElementById('editLineId').value;
   const voltage = Number(document.getElementById('editVoltage').value);
   const status = document.getElementById('editStatus').value;
+  const repairTimeText = document.getElementById('repairTimeMinutes').value.trim();
   const error = document.getElementById('editError');
   const applyButton = document.getElementById('applyEditButton');
   if (!Number.isFinite(voltage) || voltage < 0 || voltage > 1000) {
     error.textContent = 'Voltage must be between 0 and 1000 volts.';
     return;
   }
+  let repairTimeMinutes;
+  if (!currentEditNodeId && status === 'FAILED') {
+    if (!/^[0-9]+$/.test(repairTimeText)
+        || !Number.isSafeInteger(Number(repairTimeText))
+        || Number(repairTimeText) < 1
+        || Number(repairTimeText) > 2147483647) {
+      error.textContent = 'Repair time must be a positive whole number of minutes.';
+      return;
+    }
+    repairTimeMinutes = Number(repairTimeText);
+  }
   error.textContent = '';
   applyButton.disabled = true;
   const requestPath = currentEditNodeId ? '/node-voltage' : '/action';
   const requestBody = currentEditNodeId
     ? { nodeId: currentEditNodeId, newVoltage: voltage }
-    : { lineId, newVoltage: voltage, newStatus: status };
+    : {
+      lineId,
+      newVoltage: voltage,
+      newStatus: status,
+      ...(status === 'FAILED' ? { repairTimeMinutes } : {})
+    };
   requestJson(requestPath, {
     method: 'POST',
     headers: {
@@ -411,6 +449,7 @@ function initializeCanvasEditing() {
   document.getElementById('editLineId').addEventListener('change', (event) => {
     setEditLine(event.target.value);
   });
+  document.getElementById('editStatus').addEventListener('change', updateRepairTimeField);
   document.getElementById('editForm').addEventListener('submit', applyManualEdit);
   modal.querySelectorAll('[data-modal-cancel]').forEach((button) => {
     button.addEventListener('click', closeEditModal);
@@ -428,6 +467,35 @@ function appendCell(row, value) {
   row.appendChild(cell);
 }
 
+function formatAffectedNodes(nodes) {
+  return (nodes || []).map((node) =>
+    typeof node === 'string' ? node : `${node.id} (${node.name})`).join(', ');
+}
+
+function renderNetworkLines(payload) {
+  const body = document.querySelector('#networkLinesTable tbody');
+  if (!body) {
+    return;
+  }
+  body.replaceChildren();
+  for (const line of payload.lines || []) {
+    const row = document.createElement('tr');
+    appendCell(row, line.id);
+    appendCell(row, line.status);
+    appendCell(row, line.repairStatus);
+    appendCell(row, line.approvalStatus);
+    appendCell(row, formatAffectedNodes(line.affectedConsumers));
+    appendCell(row, formatAffectedNodes(line.criticalFacilities));
+    appendCell(row, line.assignedTeam);
+    appendCell(row, `${line.repairTimeMinutes ?? 0} min`);
+    appendCell(row, `${line.travelTimeMinutes ?? 0} min`);
+    appendCell(row, `${line.estimatedRestorationTimeMinutes ?? 0} min`);
+    appendCell(row, line.affectedConsumersRestored ? 'YES' : 'NO');
+    appendCell(row, line.networkRestored ? 'YES' : 'NO');
+    body.appendChild(row);
+  }
+}
+
 function renderOutages(payload) {
   const body = document.querySelector('#outagesTable tbody');
   if (!body) {
@@ -437,12 +505,52 @@ function renderOutages(payload) {
   for (const outage of payload.outages || []) {
     const row = document.createElement('tr');
     appendCell(row, outage.faultId);
+    appendCell(row, outage.lineStatus);
+    appendCell(row, outage.lineRepairStatus);
     appendPriorityCell(row, outage.priorityScore);
-    appendCell(row, (outage.affectedNodes || []).map((node) =>
-      typeof node === 'string' ? node : `${node.id} (${node.name})`).join(', '));
+    appendCell(row, formatAffectedNodes(outage.affectedConsumers));
+    appendCell(row, formatAffectedNodes(outage.criticalFacilities));
     appendCell(row, outage.assignedTeam
       ? `${outage.assignedTeam.id} • ${outage.assignedTeam.name}`
       : 'Unassigned');
+    appendCell(row, (outage.travelTimeMinutes ?? 0) + ' min');
+    appendCell(row, (outage.repairTimeMinutes ?? 0) + ' min');
+    appendCell(row, (outage.estimatedRestorationTimeMinutes
+      ?? outage.estimatedRepairMinutes ?? 0) + ' min');
+    body.appendChild(row);
+  }
+  renderRestorationReports(payload.restorationReports || []);
+}
+
+function renderRestorationReports(reports) {
+  const body = document.querySelector('#restorationTable tbody');
+  if (!body) {
+    return;
+  }
+  body.replaceChildren();
+  if (reports.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 11;
+    cell.textContent = 'No fault reports have been recorded.';
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  for (const report of reports) {
+    const row = document.createElement('tr');
+    appendCell(row, report.lineId);
+    appendCell(row, report.lineStatus);
+    appendCell(row, report.lineRepairCompleted ? 'LINE REPAIRED' : 'REPAIR PENDING');
+    appendCell(row, formatAffectedNodes(report.affectedConsumers));
+    appendCell(row, formatAffectedNodes(report.criticalFacilities));
+    appendCell(row, report.affectedConsumersRestored ? 'YES' : 'NO');
+    appendCell(row, report.assignedTeam
+      ? `${report.assignedTeam.id} - ${report.assignedTeam.name}` : 'Unassigned');
+    appendCell(row, `${report.repairTimeMinutes ?? 0} min`);
+    appendCell(row, `${report.travelTimeMinutes ?? 0} min`);
+    appendCell(row, `${report.estimatedRestorationTimeMinutes ?? 0} min`);
+    appendCell(row, report.networkFullyRestored ? 'YES' : 'NO');
     body.appendChild(row);
   }
 }
@@ -471,9 +579,10 @@ function renderRepairTeams(payload) {
     appendCell(row, team.depot);
     appendCell(row, team.status);
     appendCell(row, team.assignedFault);
-    appendCell(row, team.estimatedRepairMinutes == null
-      ? '—'
-      : `${team.estimatedRepairMinutes} min`);
+    appendCell(row, team.repairTimeMinutes == null ? '—' : `${team.repairTimeMinutes} min`);
+    appendCell(row, team.travelTimeMinutes == null ? '—' : `${team.travelTimeMinutes} min`);
+    appendCell(row, team.estimatedRestorationTimeMinutes == null
+      ? '—' : `${team.estimatedRestorationTimeMinutes} min`);
     body.appendChild(row);
   }
 }
@@ -496,12 +605,70 @@ function renderHistory(payload) {
   }
 }
 
+function renderBackupApprovals(payload) {
+  const body = document.querySelector('#backupApprovalsTable tbody');
+  if (!body) {
+    return;
+  }
+  body.replaceChildren();
+  const proposals = payload.proposals || [];
+  if (proposals.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 6;
+    cell.textContent = 'No backup link proposals.';
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+
+  for (const proposal of proposals) {
+    const row = document.createElement('tr');
+    appendCell(row, proposal.lineId);
+    appendCell(row, proposal.currentStatus);
+    appendCell(row, (proposal.path || []).join(' → '));
+    appendCell(row, proposal.approvalStatus);
+    appendCell(row, (proposal.affectedConsumers || []).map((consumer) =>
+      `${consumer.id} (${consumer.name})`).join(', '));
+    const actions = document.createElement('td');
+    if (proposal.approvalStatus === 'PROPOSED') {
+      actions.appendChild(createBackupActionButton(proposal.lineId, 'approve', 'Approve'));
+      actions.appendChild(createBackupActionButton(proposal.lineId, 'reject', 'Reject'));
+    } else if (proposal.approvalStatus === 'APPROVED') {
+      actions.appendChild(createBackupActionButton(proposal.lineId, 'activate', 'Activate'));
+      actions.appendChild(createBackupActionButton(proposal.lineId, 'reject', 'Reject'));
+    } else {
+      actions.textContent = '—';
+    }
+    row.appendChild(actions);
+    body.appendChild(row);
+  }
+}
+
+function createBackupActionButton(lineId, action, label) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'header-action backup-action-button';
+  button.textContent = label;
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    postAction(`/actions/backup-${action}`, { lineId })
+      .then(() => updateStatus(`${lineId} ${action} action recorded.`))
+      .catch((error) => {
+        console.error(`Backup link ${action} failed:`, error);
+        updateStatus(`Backup link ${action} failed: ${error.message}`);
+      });
+  });
+  return button;
+}
+
 function refreshLiveData() {
   return Promise.all([
     fetchNetworkState(),
     fetchOutageQueue(),
     fetchRepairTeams(),
-    fetchHistory()
+    fetchHistory(),
+    fetchBackupApprovals()
   ]);
 }
 
@@ -524,7 +691,8 @@ function postAction(path, body) {
       fetchNetworkState(),
       fetchOutageQueue(),
       fetchRepairTeams(),
-      fetchHistory()
+      fetchHistory(),
+      fetchBackupApprovals()
     ]).then(() => result);
   });
 }
