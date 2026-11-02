@@ -18,12 +18,14 @@ public class BackupApprovalTest {
         testFailedBackupCannotBeActivated();
         testActiveLinkCannotBeActivatedTwice();
         testActivationRunsBfsAndUpdatesConsumers();
+        testActivatedBackupReturnsToStandbyAfterPrimaryRepair();
         testMultipleBackupLinksAreIndependent();
+        testCriticalFacilityBackupLinksCanBeApprovedAndActivated();
         testPrimaryLineRepairStillWorks();
         testThreeTeamsAndPriorityRemainUnchanged();
         testRepairEtaRemainsAvailable();
         testApprovalEventsArePersisted();
-        System.out.println("Backup approval checks passed (13/13).");
+        System.out.println("Backup approval checks passed (15/15).");
     }
 
     private static void testStandbyLinkIsNeverAutomaticallyActivated() {
@@ -139,6 +141,38 @@ public class BackupApprovalTest {
                 "all consumers on the restored feeder must be powered");
     }
 
+    private static void testActivatedBackupReturnsToStandbyAfterPrimaryRepair() {
+        Fixture fixture = fixture("L7");
+        NetworkLine backupLine = fixture.network.getLine("L22");
+        BackupLinkProposal proposal = null;
+        for (BackupLinkProposal candidate : fixture.policy.getBackupLinkProposals()) {
+            if (candidate.getBackupLineId().equals("L22")) {
+                proposal = candidate;
+                break;
+            }
+        }
+        assertTrue(proposal != null, "hospital outage proposes L22");
+        fixture.policy.approveBackupLink("L22");
+        fixture.policy.activateApprovedBackupLink(
+                "L22", fixture.network, fixture.detector);
+        assertEquals(BackupApprovalStatus.ACTIVE, backupLine.getBackupApprovalStatus(),
+                "hospital backup is active before primary repair");
+        assertTrue(fixture.network.getNode("H1").isPowered(),
+                "hospital is restored through the backup before primary repair");
+
+        assertTrue(fixture.policy.restoreFault("L7", fixture.network, fixture.detector),
+                "primary hospital line is repaired");
+        assertEquals(LineStatus.STANDBY, backupLine.getStatus(),
+                "hospital backup returns to standby after primary repair");
+        assertEquals(BackupApprovalStatus.STANDBY, backupLine.getBackupApprovalStatus(),
+                "hospital backup approval resets after primary repair");
+        assertTrue(fixture.network.getNode("H1").isPowered(),
+                "hospital remains powered through the repaired primary line");
+        assertTrue(fixture.policy.getBackupLinkProposals().stream()
+                .noneMatch(item -> item.getBackupLineId().equals("L22")),
+                "expired hospital backup proposal is removed");
+    }
+
     private static void testMultipleBackupLinksAreIndependent() {
         DistributionNetwork network = new DistributionNetwork();
         network.addNode(new Substation("S1", "North Source", true));
@@ -169,6 +203,44 @@ public class BackupApprovalTest {
                 network.getLine("B1").getBackupApprovalStatus(), "B1 active state");
         assertEquals(LineStatus.STANDBY, network.getLine("B2").getStatus(),
                 "B2 remains inactive");
+    }
+
+    private static void testCriticalFacilityBackupLinksCanBeApprovedAndActivated() {
+        String[][] scenarios = {
+            {"L7", "L22", "H1"},
+            {"L10", "L23", "E1"},
+            {"L20", "L24", "E2"}
+        };
+        for (String[] scenario : scenarios) {
+            DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
+            NetworkLine failedLine = network.getLine(scenario[0]);
+            failedLine.failLine();
+            OutageDetector detector = new OutageDetector();
+            FaultReport report = new FaultReport(
+                    failedLine, detector.findAffectedNodes(network));
+            RestorationPolicy policy = new RestorationPolicy();
+            policy.submitFault(report, network);
+
+            BackupLinkProposal proposal = null;
+            for (BackupLinkProposal candidate : policy.getBackupLinkProposals()) {
+                if (candidate.getBackupLineId().equals(scenario[1])) {
+                    proposal = candidate;
+                    break;
+                }
+            }
+            assertTrue(proposal != null, scenario[1] + " proposal is available");
+            assertTrue(proposal.getAffectedConsumers().stream()
+                    .anyMatch(node -> node.getId().equals(scenario[2])),
+                    scenario[1] + " proposal covers critical facility " + scenario[2]);
+            assertEquals(BackupApprovalStatus.PROPOSED, proposal.getApprovalStatus(),
+                    scenario[1] + " requires operator approval");
+            policy.approveBackupLink(scenario[1]);
+            assertEquals(LineStatus.STANDBY, network.getLine(scenario[1]).getStatus(),
+                    scenario[1] + " remains inactive after approval");
+            policy.activateApprovedBackupLink(scenario[1], network, detector);
+            assertTrue(network.getNode(scenario[2]).isPowered(),
+                    scenario[2] + " is restored after approved activation");
+        }
     }
 
     private static void testPrimaryLineRepairStillWorks() {
@@ -241,7 +313,9 @@ public class BackupApprovalTest {
             for (String[] event : manager.loadHistory()) {
                 eventTypes.add(event[1]);
                 if (event[1].startsWith("BACKUP_")) {
-                    assertEquals("L14", event[2], "backup event line ID");
+                    if (!"BACKUP_LINK_PROPOSED".equals(event[1])) {
+                        assertEquals("L14", event[2], "backup action event line ID");
+                    }
                     assertTrue(!event[0].trim().isEmpty(), "backup event timestamp");
                 }
             }

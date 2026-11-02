@@ -139,6 +139,9 @@ public class DistributionNetwork {
         network.addLine(new NetworkLine("L19", "F3", "C10", false, 20));
         network.addLine(new NetworkLine("L20", "F3", "E2", false, 35));
         network.addLine(new NetworkLine("L21", "F4", "C11", false, 20));
+        network.addLine(new NetworkLine("L22", "F3", "H1", true, 15));
+        network.addLine(new NetworkLine("L23", "F1", "E1", true, 15));
+        network.addLine(new NetworkLine("L24", "F1", "E2", true, 15));
 
         return network;
     }

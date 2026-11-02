@@ -2,34 +2,51 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class WebServer {
     private static final int PORT = 8081;
+    private static final double NORMAL_VOLTAGE = 230.0;
+    private static final double VOLTAGE_DROP_THRESHOLD_PERCENT = 20.0;
 
     private final DistributionNetwork network;
     private final OutageDetector outageDetector = new OutageDetector();
     private final RestorationPolicy restorationPolicy;
     private final HistoryManager historyManager;
+    private final Map<String, Double> nodeObservedVoltages = new HashMap<>();
+    private SensorMonitor sensorMonitor;
 
     private WebServer() {
+        this(Paths.get("outage_history.csv"));
+    }
+
+    private WebServer(Path historyFile) {
         network = DistributionNetwork.createDemonstrationNetwork();
-        historyManager = new HistoryManager();
+        historyManager = new HistoryManager(historyFile);
         restorationPolicy = RestorationPolicy.withHistoryManager(historyManager);
+        sensorMonitor = createSensorMonitor();
     }
 
     public static void main(String[] args) throws IOException {
-        WebServer application = new WebServer();
-        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
+        int port = args.length > 0 ? Integer.parseInt(args[0]) : PORT;
+        Path historyFile = args.length > 1
+                ? Paths.get(args[1]) : Paths.get("outage_history.csv");
+        WebServer application = new WebServer(historyFile);
+        HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/", application::handleRequest);
         server.start();
-        System.out.println("SmartGrid HTTP API running on http://localhost:" + PORT);
+        System.out.println("SmartGrid HTTP API running on http://localhost:" + port);
     }
 
     private void handleRequest(HttpExchange exchange) throws IOException {
@@ -41,59 +58,93 @@ public final class WebServer {
             return;
         }
         String path = exchange.getRequestURI().getPath();
+        int responseStatus = 200;
+        String responseBody;
         try {
             if ("POST".equalsIgnoreCase(method)) {
-                String lineId = readLineId(exchange);
+                String requestBody = readRequestBody(exchange);
+                responseBody = "{\"status\":\"ok\"}";
                 switch (path) {
                     case "/api/actions/backup-approve":
-                        restorationPolicy.approveBackupLink(lineId);
+                        restorationPolicy.approveBackupLink(readLineId(requestBody));
                         break;
                     case "/api/actions/backup-reject":
-                        restorationPolicy.rejectBackupLink(lineId);
+                        restorationPolicy.rejectBackupLink(readLineId(requestBody));
                         break;
                     case "/api/actions/backup-activate":
                         restorationPolicy.activateApprovedBackupLink(
-                                lineId, network, new OutageDetector());
+                                readLineId(requestBody), network, outageDetector);
+                        break;
+                    case "/api/actions/simulate-fault":
+                        simulateCityEvent(readStringField(requestBody, "eventType"));
+                        break;
+                    case "/api/actions/run-detection":
+                        detectAndSubmitFaults();
+                        break;
+                    case "/api/actions/auto-restore":
+                        restoreNextFault();
+                        break;
+                    case "/api/actions/reset":
+                        resetNetwork();
+                        break;
+                    case "/api/action":
+                        responseBody = applyManualLineEdit(readManualLineEdit(requestBody));
+                        break;
+                    case "/api/node-voltage":
+                        responseBody = applyNodeVoltageEdit(requestBody);
                         break;
                     default:
-                        sendJson(exchange, 404, "{\"error\":\"Not found\"}");
-                        return;
+                        responseStatus = isGetEndpoint(path) ? 405 : 404;
+                        responseBody = isGetEndpoint(path)
+                                ? "{\"error\":\"Method not allowed\"}"
+                                : "{\"error\":\"Not found\"}";
                 }
-                sendJson(exchange, 200, "{\"status\":\"ok\"}");
-                return;
+            } else if (!"GET".equalsIgnoreCase(method)) {
+                responseStatus = 405;
+                responseBody = "{\"error\":\"Method not allowed\"}";
+            } else {
+                switch (path) {
+                    case "/api/network":
+                        responseBody = networkPayload();
+                        break;
+                    case "/api/backup-approvals":
+                        responseBody = backupApprovalsPayload();
+                        break;
+                    case "/api/teams":
+                        responseBody = teamsPayload();
+                        break;
+                    case "/api/queue":
+                    case "/api/outages":
+                        responseBody = queuePayload();
+                        break;
+                    case "/api/history":
+                        responseBody = historyPayload();
+                        break;
+                    case "/api/health":
+                        responseBody = "{\"status\":\"ok\",\"service\":\"smart-grid-api\"}";
+                        break;
+                    default:
+                        responseStatus = isPostEndpoint(path) ? 405 : 404;
+                        responseBody = isPostEndpoint(path)
+                                ? "{\"error\":\"Method not allowed\"}"
+                                : "{\"error\":\"Not found\"}";
+                        break;
+                }
             }
-            if (!"GET".equalsIgnoreCase(method)) {
-                sendJson(exchange, 405, "{\"error\":\"Method not allowed\"}");
-                return;
-            }
-            switch (path) {
-                case "/api/network":
-                    sendJson(exchange, 200, networkPayload());
-                    break;
-                case "/api/backup-approvals":
-                    sendJson(exchange, 200, backupApprovalsPayload());
-                    break;
-                case "/api/teams":
-                    sendJson(exchange, 200, teamsPayload());
-                    break;
-                case "/api/queue":
-                case "/api/outages":
-                    sendJson(exchange, 200, queuePayload());
-                    break;
-                case "/api/history":
-                    sendJson(exchange, 200, historyPayload());
-                    break;
-                default:
-                    sendJson(exchange, 404, "{\"error\":\"Not found\"}");
-                    break;
-            }
+        } catch (IllegalArgumentException exception) {
+            responseStatus = 400;
+            responseBody = "{\"error\":" + jsonString(exception.getMessage()) + "}";
+        } catch (IllegalStateException exception) {
+            responseStatus = 409;
+            responseBody = "{\"error\":" + jsonString(exception.getMessage()) + "}";
         } catch (IOException exception) {
-            sendJson(exchange, 500,
-                    "{\"error\":" + jsonString(exception.getMessage()) + "}");
+            responseStatus = 500;
+            responseBody = "{\"error\":" + jsonString(exception.getMessage()) + "}";
         } catch (RuntimeException exception) {
-            sendJson(exchange, 500,
-                    "{\"error\":" + jsonString(exception.getMessage()) + "}");
+            responseStatus = 500;
+            responseBody = "{\"error\":" + jsonString(exception.getMessage()) + "}";
         }
+        sendJson(exchange, responseStatus, responseBody);
     }
 
     private String networkPayload() {
@@ -113,6 +164,13 @@ public final class WebServer {
                     .append(",\"nodeType\":").append(jsonString(
                             node.getClass().getSimpleName()))
                     .append(",\"powered\":").append(node.isPowered())
+                    .append(",\"observedVoltage\":")
+                    .append(nodeObservedVoltages.getOrDefault(node.getId(), NORMAL_VOLTAGE))
+                    .append(",\"voltageEdited\":")
+                    .append(nodeObservedVoltages.containsKey(node.getId()))
+                    .append(",\"voltageAlert\":")
+                    .append(isNodeVoltageAlert(
+                            nodeObservedVoltages.getOrDefault(node.getId(), NORMAL_VOLTAGE)))
                     .append(",\"x\":").append(position[0])
                     .append(",\"y\":").append(position[1])
                     .append(",\"label\":").append(jsonString(node.getNodeLabel()))
@@ -133,7 +191,12 @@ public final class WebServer {
                     .append(",\"backup\":").append(line.isBackupLink())
                     .append(",\"approvalStatus\":")
                     .append(jsonString(line.getBackupApprovalStatus().name()))
-                    .append(",\"observedVoltage\":230")
+                    .append(",\"observedVoltage\":")
+                    .append(sensorMonitor.getReading(line.getId()) == null ? NORMAL_VOLTAGE
+                            : sensorMonitor.getReading(line.getId()).getObservedVoltage())
+                    .append(",\"observedCurrent\":")
+                    .append(sensorMonitor.getReading(line.getId()) == null ? 10
+                            : sensorMonitor.getReading(line.getId()).getObservedCurrent())
                     .append(",\"repairTimeMinutes\":").append(line.getRepairTimeMinutes())
                     .append(",\"repairStatus\":")
                     .append(jsonString(report == null
@@ -208,6 +271,236 @@ public final class WebServer {
             }
         }
         json.append(']');
+    }
+
+    private SensorMonitor createSensorMonitor() {
+        SensorMonitor monitor = new SensorMonitor(20, 30, network, historyManager);
+        for (NetworkLine line : network.getLines()) {
+            monitor.addReading(new SensorReading(line.getId(), NORMAL_VOLTAGE, 10,
+                    NORMAL_VOLTAGE, 10));
+        }
+        return monitor;
+    }
+
+    private static String readRequestBody(HttpExchange exchange) throws IOException {
+        return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    private static String readStringField(String requestBody, String fieldName) {
+        Pattern pattern = Pattern.compile("\\\"" + Pattern.quote(fieldName)
+                + "\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"");
+        Matcher matcher = pattern.matcher(requestBody);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException(fieldName + " is required.");
+        }
+        return matcher.group(1);
+    }
+
+    private static double readNumberField(String requestBody, String fieldName) {
+        Pattern pattern = Pattern.compile("\\\"" + Pattern.quote(fieldName)
+                + "\\\"\\s*:\\s*(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))");
+        Matcher matcher = pattern.matcher(requestBody);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException(fieldName + " is required.");
+        }
+        try {
+            return Double.parseDouble(matcher.group(1));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(fieldName + " must be a number.", exception);
+        }
+    }
+
+    private static String readLineId(String requestBody) {
+        return readStringField(requestBody, "lineId");
+    }
+
+    private static ManualLineEdit readManualLineEdit(String requestBody) {
+        String lineId = readLineId(requestBody);
+        double voltage = readNumberField(requestBody, "newVoltage");
+        LineStatus status;
+        try {
+            status = LineStatus.valueOf(readStringField(requestBody, "newStatus"));
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    "newStatus must be WORKING, FAILED, or STANDBY.", exception);
+        }
+        int repairTimeMinutes = 0;
+        if (status == LineStatus.FAILED) {
+            double value = readNumberField(requestBody, "repairTimeMinutes");
+            if (value != Math.rint(value) || value > Integer.MAX_VALUE || value < 1) {
+                throw new IllegalArgumentException(
+                        "repairTimeMinutes must be a positive whole number of minutes.");
+            }
+            repairTimeMinutes = (int) value;
+        }
+        return new ManualLineEdit(lineId, voltage, status, repairTimeMinutes);
+    }
+
+    private void simulateCityEvent(String eventType) {
+        sensorMonitor.simulateCityEvent(eventType);
+        detectAndSubmitFaults();
+    }
+
+    private int detectAndSubmitFaults() {
+        List<NetworkLine> faultedLines = new ArrayList<>(
+                sensorMonitor.findFaultedLines(network.getLines()));
+        List<NetworkNode> affectedNodes = outageDetector.findAffectedNodes(network);
+        List<UncheckedIOException> historyFailures =
+                sensorMonitor.drainHistoryWriteFailures();
+        int newFaults = 0;
+        for (NetworkLine line : faultedLines) {
+            if (restorationPolicy.isPendingFault(line)) {
+                continue;
+            }
+            try {
+                restorationPolicy.submitFault(
+                        new FaultReport(line, orderAffectedNodes(line, affectedNodes)), network);
+                newFaults++;
+            } catch (UncheckedIOException exception) {
+                if (restorationPolicy.isPendingFault(line)) {
+                    newFaults++;
+                }
+                historyFailures.add(exception);
+            }
+        }
+        restorationPolicy.refreshRestorationStatuses(network, outageDetector);
+        if (!historyFailures.isEmpty()) {
+            IOException cause = historyFailures.get(0).getCause();
+            for (int index = 1; index < historyFailures.size(); index++) {
+                cause.addSuppressed(historyFailures.get(index).getCause());
+            }
+            throw new UncheckedIOException(
+                    "Faults were detected and queued, but history could not be saved. "
+                            + "Close outage_history.csv in Excel or another application "
+                            + "and retry detection.",
+                    cause);
+        }
+        return newFaults;
+    }
+
+    private List<NetworkNode> orderAffectedNodes(
+            NetworkLine failedLine, List<NetworkNode> affectedNodes) {
+        List<NetworkNode> ordered = new ArrayList<>(affectedNodes);
+        ordered.sort(java.util.Comparator
+                .comparingInt((NetworkNode node) -> {
+                    if (node.getId().equals(failedLine.getToNodeId())) {
+                        return 0;
+                    }
+                    if (node.getId().equals(failedLine.getFromNodeId())) {
+                        return 1;
+                    }
+                    if (node instanceof CriticalArea) {
+                        return 2;
+                    }
+                    if (node instanceof ConsumerArea) {
+                        return 3;
+                    }
+                    return 4;
+                })
+                .thenComparing(NetworkNode::getId));
+        return ordered;
+    }
+
+    private String applyManualLineEdit(ManualLineEdit edit) {
+        if (!Double.isFinite(edit.voltage) || edit.voltage <= 0 || edit.voltage > 1000) {
+            throw new IllegalArgumentException(
+                    "Voltage must be a positive number no greater than 1000 volts.");
+        }
+        NetworkLine line = network.getLine(edit.lineId);
+        if (line == null) {
+            throw new IllegalArgumentException("Unknown line: " + edit.lineId);
+        }
+        if (edit.status == LineStatus.STANDBY && !line.isBackupLink()) {
+            throw new IllegalArgumentException("Only backup lines can be placed in STANDBY.");
+        }
+        if (line.isBackupLink() && edit.status == LineStatus.WORKING
+                && line.getBackupApprovalStatus() != BackupApprovalStatus.ACTIVE) {
+            throw new IllegalArgumentException(
+                    "Backup links must be approved and activated through Backup Links.");
+        }
+
+        boolean managedPrimaryRepair = edit.status == LineStatus.WORKING
+                && !line.isBackupLink() && line.getStatus() == LineStatus.FAILED
+                && restorationPolicy.isPendingFault(line);
+        if (managedPrimaryRepair) {
+            restorationPolicy.restoreFault(line.getId(), network, outageDetector);
+            sensorMonitor.clearAnomaly(line.getId());
+        } else if (edit.status == LineStatus.FAILED) {
+            if (!line.isWorking() && line.getStatus() != LineStatus.FAILED) {
+                throw new IllegalStateException(
+                        "Only working or already-failed lines can be marked FAILED.");
+            }
+            line.failLine(edit.repairTimeMinutes);
+        } else if (edit.status == LineStatus.STANDBY) {
+            if (line.getStatus() == LineStatus.FAILED) {
+                line.restoreLine();
+            }
+            line.deactivateBackup();
+        } else if (!managedPrimaryRepair && !line.isBackupLink()) {
+            line.restoreLine();
+        }
+
+        SensorReading reading = sensorMonitor.getReading(line.getId());
+        if (reading != null) {
+            sensorMonitor.addReading(new SensorReading(
+                    line.getId(), reading.getNormalVoltage(), reading.getNormalCurrent(),
+                    edit.voltage, reading.getObservedCurrent()));
+        }
+        detectAndSubmitFaults();
+        SensorReading updatedReading = sensorMonitor.getReading(line.getId());
+        double observedVoltage = updatedReading == null
+                ? NORMAL_VOLTAGE : updatedReading.getObservedVoltage();
+        return "{\"status\":\"ok\",\"line\":{\"id\":"
+                + jsonString(line.getId()) + ",\"status\":"
+                + jsonString(line.getStatus().name()) + ",\"observedVoltage\":"
+                + observedVoltage + ",\"repairTimeMinutes\":"
+                + line.getRepairTimeMinutes() + "}}";
+    }
+
+    private String applyNodeVoltageEdit(String requestBody) {
+        String nodeId = readStringField(requestBody, "nodeId");
+        double voltage = readNumberField(requestBody, "newVoltage");
+        if (!Double.isFinite(voltage) || voltage < 0 || voltage > 1000) {
+            throw new IllegalArgumentException("Voltage must be between 0 and 1000 volts.");
+        }
+        if (network.getNode(nodeId) == null) {
+            throw new IllegalArgumentException("Unknown node: " + nodeId);
+        }
+        nodeObservedVoltages.put(nodeId, voltage);
+        sensorMonitor.updateIncidentLineVoltage(nodeId, voltage);
+        int detectedFaultCount = detectAndSubmitFaults();
+        return "{\"status\":\"ok\",\"node\":{\"id\":"
+                + jsonString(nodeId) + ",\"observedVoltage\":" + voltage
+                + "},\"detectedFaultCount\":" + detectedFaultCount + "}";
+    }
+
+    private void restoreNextFault() {
+        if (restorationPolicy.getPendingFaultCount() == 0) {
+            throw new IllegalStateException("There are no pending faults to restore.");
+        }
+        if (restorationPolicy.hasPendingBackupApprovalDecision()) {
+            throw new IllegalStateException(
+                    "Review each proposed backup link before continuing repair.");
+        }
+        restorationPolicy.restoreNextFault(network, outageDetector);
+        for (FaultReport report : restorationPolicy.getFaultReports()) {
+            if (report.isLineRepairCompleted()) {
+                sensorMonitor.clearAnomaly(report.getFailedLine().getId());
+            }
+        }
+        restorationPolicy.refreshRestorationStatuses(network, outageDetector);
+    }
+
+    private void resetNetwork() {
+        network.reset();
+        restorationPolicy.reset();
+        nodeObservedVoltages.clear();
+        sensorMonitor = createSensorMonitor();
+    }
+
+    private boolean isNodeVoltageAlert(double voltage) {
+        return SensorReading.isVoltageAbnormal(
+                voltage, NORMAL_VOLTAGE, VOLTAGE_DROP_THRESHOLD_PERCENT);
     }
 
     private String backupApprovalsPayload() {
@@ -315,17 +608,17 @@ public final class WebServer {
             }
             NetworkLine line = report.getFailedLine();
             RepairTeam team = report.getAssignedTeam();
-            json.append("{\"faultId\":").append(jsonString(line.getId() + "-Fault"))
+            json.append("{\"reportId\":").append(report.getReportOrder())
+                    .append(",\"faultId\":").append(jsonString(line.getId() + "-Fault"))
                     .append(",\"lineId\":").append(jsonString(line.getId()))
                     .append(",\"lineStatus\":").append(jsonString(line.getStatus().name()))
                     .append(",\"lineRepairStatus\":")
                     .append(jsonString(report.isLineRepairCompleted()
-                            ? "LINE_REPAIRED" : "REPAIR_PENDING"))
-                    .append(",\"affectedConsumersRestored\":")
-                    .append(report.areAffectedConsumersRestored())
-                    .append(",\"networkFullyRestored\":")
-                    .append(report.isNetworkFullyRestored())
-                    .append(",\"priorityScore\":").append(report.getPriorityScore())
+                            ? "LINE_REPAIRED" : "REPAIR_PENDING"));
+            appendBooleanField(
+                    json, "affectedConsumersRestored", report.areAffectedConsumersRestored());
+            appendBooleanField(json, "networkFullyRestored", report.isNetworkFullyRestored());
+            json.append(",\"priorityScore\":").append(report.getPriorityScore())
                     .append(",\"affectedNodes\":[");
             List<NetworkNode> affectedNodes = report.getAffectedNodes();
             for (int nodeIndex = 0; nodeIndex < affectedNodes.size(); nodeIndex++) {
@@ -374,14 +667,14 @@ public final class WebServer {
     private static void appendRestorationReport(StringBuilder json, FaultReport report) {
         NetworkLine line = report.getFailedLine();
         RepairTeam team = report.getAssignedTeam();
-        json.append("{\"lineId\":").append(jsonString(line.getId()))
-                .append(",\"lineStatus\":").append(jsonString(line.getStatus().name()))
-                .append(",\"lineRepairCompleted\":").append(report.isLineRepairCompleted())
-                .append(",\"affectedConsumersRestored\":")
-                .append(report.areAffectedConsumersRestored())
-                .append(",\"networkFullyRestored\":")
-                .append(report.isNetworkFullyRestored())
-                .append(",\"affectedConsumers\":");
+        json.append("{\"reportId\":").append(report.getReportOrder())
+                .append(",\"lineId\":").append(jsonString(line.getId()))
+                .append(",\"lineStatus\":").append(jsonString(line.getStatus().name()));
+        appendBooleanField(json, "lineRepairCompleted", report.isLineRepairCompleted());
+        appendBooleanField(
+                json, "affectedConsumersRestored", report.areAffectedConsumersRestored());
+        appendBooleanField(json, "networkFullyRestored", report.isNetworkFullyRestored());
+        json.append(",\"affectedConsumers\":");
         appendAffectedNodes(json, report, false);
         json.append(",\"criticalFacilities\":");
         appendAffectedNodes(json, report, true);
@@ -415,6 +708,21 @@ public final class WebServer {
                     .append('}');
         }
         return json.append("]}").toString();
+    }
+
+    private static final class ManualLineEdit {
+        private final String lineId;
+        private final double voltage;
+        private final LineStatus status;
+        private final int repairTimeMinutes;
+
+        private ManualLineEdit(
+                String lineId, double voltage, LineStatus status, int repairTimeMinutes) {
+            this.lineId = lineId;
+            this.voltage = voltage;
+            this.status = status;
+            this.repairTimeMinutes = repairTimeMinutes;
+        }
     }
 
     private static int[] nodePosition(String nodeId) {
@@ -548,10 +856,36 @@ public final class WebServer {
         return escaped.append('"').toString();
     }
 
+    private static void appendBooleanField(StringBuilder json, String fieldName, boolean value) {
+        json.append(",\"").append(fieldName).append("\":").append(value);
+    }
+
     private static void addCorsHeaders(HttpExchange exchange) {
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+    }
+
+    private static boolean isGetEndpoint(String path) {
+        return "/api/network".equals(path)
+                || "/api/backup-approvals".equals(path)
+                || "/api/teams".equals(path)
+                || "/api/queue".equals(path)
+                || "/api/outages".equals(path)
+                || "/api/history".equals(path)
+                || "/api/health".equals(path);
+    }
+
+    private static boolean isPostEndpoint(String path) {
+        return "/api/actions/backup-approve".equals(path)
+                || "/api/actions/backup-reject".equals(path)
+                || "/api/actions/backup-activate".equals(path)
+                || "/api/actions/simulate-fault".equals(path)
+                || "/api/actions/run-detection".equals(path)
+                || "/api/actions/auto-restore".equals(path)
+                || "/api/actions/reset".equals(path)
+                || "/api/action".equals(path)
+                || "/api/node-voltage".equals(path);
     }
 
     private static void sendJson(HttpExchange exchange, int status, String body)
@@ -559,9 +893,11 @@ public final class WebServer {
         byte[] response = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(
                 "Content-Type", "application/json; charset=UTF-8");
-        exchange.sendResponseHeaders(status, response.length);
-        try (OutputStream output = exchange.getResponseBody()) {
-            output.write(response);
+        try {
+            exchange.sendResponseHeaders(status, response.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(response);
+            }
         } finally {
             exchange.close();
         }

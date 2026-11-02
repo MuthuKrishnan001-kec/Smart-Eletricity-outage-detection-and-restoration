@@ -1,3 +1,4 @@
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -60,7 +61,6 @@ public class Main {
 
     private void showMenu() {
         System.out.println();
-        System.out.println(SafetyNotice.TEXT);
         System.out.println("1. Display Network");
         System.out.println("2. Manual Line Fault");
         System.out.println("3. Simulate City Event and Run Sensor Detection");
@@ -167,6 +167,10 @@ public class Main {
         }
 
         OutageDiagnostics diagnostics = outageDetector.detectFaults(network, sensorMonitor);
+        for (UncheckedIOException failure : sensorMonitor.drainHistoryWriteFailures()) {
+            System.err.println("Warning: " + failure.getMessage()
+                    + ". Close outage_history.csv in Excel or another application.");
+        }
         if (diagnostics.getFaultedLines().isEmpty()) {
             System.out.println("No failed lines or voltage faults detected.");
             return;

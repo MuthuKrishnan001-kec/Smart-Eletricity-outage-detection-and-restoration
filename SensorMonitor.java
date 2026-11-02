@@ -21,6 +21,7 @@ public class SensorMonitor {
     private final DistributionNetwork network;
     private final HistoryManager historyManager;
     private final Set<String> loggedFaultLineIds = new HashSet<>();
+    private final List<UncheckedIOException> historyWriteFailures = new ArrayList<>();
 
     public SensorMonitor(double voltageDropThresholdPercent,
                          double currentDeviationThresholdPercent) {
@@ -56,6 +57,36 @@ public class SensorMonitor {
 
     public SensorReading getReading(String lineId) {
         return readings.get(lineId);
+    }
+
+    public void updateIncidentLineVoltage(String nodeId, double observedVoltage) {
+        if (network == null) {
+            throw new IllegalStateException(
+                    "Node voltage updates require a monitor attached to a network.");
+        }
+        if (nodeId == null || network.getNode(nodeId) == null) {
+            throw new IllegalArgumentException("Unknown node: " + nodeId);
+        }
+        if (!Double.isFinite(observedVoltage) || observedVoltage < 0
+                || observedVoltage > 1000) {
+            throw new IllegalArgumentException(
+                    "Voltage must be between 0 and 1000 volts.");
+        }
+
+        for (NetworkLine line : network.getIncidentLines(nodeId)) {
+            if (line.isBackupLink()) {
+                continue;
+            }
+            SensorReading reading = readings.get(line.getId());
+            if (reading != null) {
+                addReading(new SensorReading(
+                        line.getId(),
+                        reading.getNormalVoltage(),
+                        reading.getNormalCurrent(),
+                        observedVoltage,
+                        reading.getObservedCurrent()));
+            }
+        }
     }
 
     public List<NetworkLine> simulateCityEvent(String eventType) {
@@ -244,6 +275,12 @@ public class SensorMonitor {
         return reading.isVoltageAbnormal(voltageDropThresholdPercent);
     }
 
+    public synchronized List<UncheckedIOException> drainHistoryWriteFailures() {
+        List<UncheckedIOException> failures = new ArrayList<>(historyWriteFailures);
+        historyWriteFailures.clear();
+        return failures;
+    }
+
     public List<String> getAbnormalReasons(SensorReading reading) {
         return reading.getAbnormalReasons(
                 voltageDropThresholdPercent, currentDeviationThresholdPercent);
@@ -300,8 +337,8 @@ public class SensorMonitor {
                     "DETECTED");
             loggedFaultLineIds.add(line.getId());
         } catch (IOException exception) {
-            throw new UncheckedIOException("Could not persist detected fault "
-                    + line.getId(), exception);
+            historyWriteFailures.add(new UncheckedIOException(
+                    "Could not persist detected fault " + line.getId(), exception));
         }
     }
 }

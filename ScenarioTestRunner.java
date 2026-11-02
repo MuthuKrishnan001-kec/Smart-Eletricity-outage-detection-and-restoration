@@ -8,7 +8,7 @@ import java.util.Set;
 
 public class ScenarioTestRunner {
     private static final int EXPECTED_NODE_COUNT = 20;
-    private static final int EXPECTED_LINE_COUNT = 21;
+    private static final int EXPECTED_LINE_COUNT = 24;
     private static final int EXPECTED_SUBSTATION_COUNT = 2;
     private static final int EXPECTED_REPAIR_TEAM_COUNT = 3;
 
@@ -20,19 +20,19 @@ public class ScenarioTestRunner {
             new Scenario("S02", "General-area line fault: L6", new String[] {"L6"}, null,
                     ids("C2"), ids(), ids()),
             new Scenario("S03", "Hospital connection fault: L7", new String[] {"L7"}, null,
-                    ids("H1"), ids("H1"), ids()),
+                    ids("H1"), ids("H1"), ids("L22")),
             new Scenario("S04", "General-area line fault: L11", new String[] {"L11"}, null,
                     ids("C5"), ids(), ids()),
             new Scenario("S05", "Storm tears: L5 + L6", new String[] {"L5", "L6"}, null,
                     ids("C1", "C2"), ids(), ids()),
             new Scenario("S06", "Storm tears: L7 + L8", new String[] {"L7", "L8"}, null,
-                    ids("H1", "C3"), ids("H1"), ids()),
+                    ids("H1", "C3"), ids("H1"), ids("L22")),
             new Scenario("S07", "Storm tears: L9 + L10", new String[] {"L9", "L10"}, null,
-                    ids("C4", "E1"), ids("E1"), ids()),
+                    ids("C4", "E1"), ids("E1"), ids("L23")),
             new Scenario("S08", "Storm tears: L10 + L11", new String[] {"L10", "L11"}, null,
-                    ids("E1", "C5"), ids("E1"), ids()),
+                    ids("E1", "C5"), ids("E1"), ids("L23")),
             new Scenario("S09", "Storm tears: L5 + L7", new String[] {"L5", "L7"}, null,
-                    ids("C1", "H1"), ids("H1"), ids()),
+                    ids("C1", "H1"), ids("H1"), ids("L22")),
             new Scenario("S10", "Peak-load safety trip: L5", new String[] {"L5"}, null,
                     ids("C1"), ids(), ids(), true),
             new Scenario("S11", "Peak-load safety trip: L8", new String[] {"L8"}, null,

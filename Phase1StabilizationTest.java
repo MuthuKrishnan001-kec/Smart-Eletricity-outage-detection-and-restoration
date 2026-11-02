@@ -20,9 +20,9 @@ public class Phase1StabilizationTest {
     private void testNormalOperationAndGraphShape() {
         DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
         assertEquals(20, network.getNodes().size(), "node count");
-        assertEquals(21, network.getLines().size(), "line count");
+        assertEquals(24, network.getLines().size(), "line count");
         assertEquals(18, primaryLineCount(network), "primary line count");
-        assertEquals(3, backupLineCount(network), "backup line count");
+        assertEquals(6, backupLineCount(network), "backup line count");
         assertEquals(2, network.getSubstations().size(), "substation count");
         assertEquals(20, detector.findReachableNodes(network).size(),
                 "reachable node count during normal operation");
@@ -50,6 +50,18 @@ public class Phase1StabilizationTest {
         assertTrue(network.getLine("L12").isBackupLink(), "L12 backup designation");
         assertEquals(LineStatus.STANDBY, network.getLine("L12").getStatus(),
                 "standby backup initial status");
+        assertEquals("F3", network.getLine("L22").getFromNodeId(),
+                "hospital backup source feeder");
+        assertEquals("H1", network.getLine("L22").getToNodeId(),
+                "hospital backup destination");
+        assertEquals("E1", network.getLine("L23").getToNodeId(),
+                "emergency centre backup destination");
+        assertEquals("E2", network.getLine("L24").getToNodeId(),
+                "fire and rescue station backup destination");
+        for (String id : Arrays.asList("L22", "L23", "L24")) {
+            assertEquals(LineStatus.STANDBY, network.getLine(id).getStatus(),
+                    id + " critical-facility backup starts in standby");
+        }
         for (String id : Arrays.asList(
                 "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8",
                 "C9", "C10", "C11")) {

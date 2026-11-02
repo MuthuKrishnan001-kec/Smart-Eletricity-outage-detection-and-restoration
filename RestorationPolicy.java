@@ -295,6 +295,66 @@ public class RestorationPolicy {
         return networkRestored;
     }
 
+    /** Repairs a specifically selected queued line from an operator-driven interface. */
+    public synchronized boolean restoreFault(
+            String lineId, DistributionNetwork network, OutageDetector detector) {
+        if (lineId == null || lineId.trim().isEmpty()
+                || network == null || detector == null) {
+            throw new IllegalArgumentException(
+                    "lineId, network, and detector must not be empty or null.");
+        }
+        NetworkLine line = network.getLine(lineId);
+        if (line == null) {
+            throw new IllegalArgumentException("Unknown line: " + lineId);
+        }
+        FaultReport report = getFaultReport(lineId);
+        if (report == null || !faultQueue.contains(report)) {
+            throw new IllegalStateException("No pending fault report exists for " + lineId + ".");
+        }
+        if (line.getStatus() != LineStatus.FAILED) {
+            throw new IllegalStateException("Line " + lineId + " is not failed.");
+        }
+
+        assignmentNetwork = network;
+        assignAvailableTeams(network);
+        RepairTeam team = report.getAssignedTeam();
+        if (team == null) {
+            throw new IllegalStateException("No repair team is currently available.");
+        }
+        if (team.isAvailable()) {
+            team.assign();
+        }
+        faultQueue.remove(report);
+        List<UncheckedIOException> historyFailures = new ArrayList<>();
+        boolean networkRestored = false;
+        try {
+            line.restoreLine();
+            expireBackupProposals(report);
+            report.markLineRepairCompleted();
+            detector.findAffectedNodes(network);
+            Set<NetworkNode> reachable = detector.findReachableNodes(network);
+            networkRestored = updateRestorationStatuses(network, reachable);
+            String status = "LINE_REPAIR_COMPLETED"
+                    + (report.areAffectedConsumersRestored()
+                            ? "; AFFECTED_CONSUMERS_RESTORED" : "")
+                    + (networkRestored ? "; NETWORK_RESTORED" : "");
+            logRestorationEvent("REPAIR_COMPLETED", lineId, affectedZones(report),
+                    team.getName(), status, historyFailures);
+        } finally {
+            team.release();
+            report.setTeamStatus(team.getStatus().name());
+            assignAvailableTeams(network);
+        }
+        if (!historyFailures.isEmpty()) {
+            UncheckedIOException failure = historyFailures.get(0);
+            for (int index = 1; index < historyFailures.size(); index++) {
+                failure.addSuppressed(historyFailures.get(index));
+            }
+            throw failure;
+        }
+        return networkRestored;
+    }
+
     private int countAffectedConsumers(List<NetworkNode> nodes) {
         int count = 0;
         for (NetworkNode node : nodes) {
@@ -500,7 +560,12 @@ public class RestorationPolicy {
         List<String> expiredIds = new ArrayList<>();
         for (BackupLinkProposal proposal : backupProposals.values()) {
             if (proposal.getFailedLineId().equals(report.getFailedLine().getId())) {
-                proposal.getBackupLine().clearBackupApproval();
+                NetworkLine backupLine = proposal.getBackupLine();
+                if (backupLine.getBackupApprovalStatus() == BackupApprovalStatus.ACTIVE) {
+                    backupLine.deactivateBackup();
+                } else {
+                    backupLine.clearBackupApproval();
+                }
                 expiredIds.add(proposal.getBackupLineId());
             }
         }

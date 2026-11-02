@@ -1,16 +1,18 @@
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 public class Phase2CoreAlgorithmTest {
     public static void main(String[] args) {
         testIntegratedVoltageFaultDiagnostics();
+        testHighVoltageFaultDiagnostics();
         testPriorityQueueOrdering();
         testPriorityChangesReorderQueue();
         testHighPriorityReportPreemptsWaitingAssignments();
         testBackupPlanAndRepairTime();
         testCityEventsAndCrewAssignment();
-        System.out.println("Phase 2 core algorithm checks passed (6/6).");
+        System.out.println("Phase 2 core algorithm checks passed (7/7).");
     }
 
     private static void testIntegratedVoltageFaultDiagnostics() {
@@ -37,6 +39,30 @@ public class Phase2CoreAlgorithmTest {
                 new OutageDetector().detectFaults(network, new SensorMonitor(20, 30));
         assertTrue(statusDiagnostics.getFaultedLines().contains(network.getLine("L2")),
                 "pre-failed lines must be included without sensor readings");
+    }
+
+    private static void testHighVoltageFaultDiagnostics() {
+        assertTrue(!new SensorReading("L1", 230, 10, 250, 10)
+                .isVoltageAbnormal(20), "250 V is not above the cutoff threshold");
+        assertTrue(new SensorReading("L1", 230, 10, 250.1, 10)
+                .isVoltageAbnormal(20), "voltage above 250 V is abnormal");
+        assertTrue(new SensorReading("L1", 230, 10, 250.1, 10)
+                .getAbnormalReasons(20, 30).contains("Voltage exceeded high-voltage cutoff"),
+                "overvoltage diagnostic reason");
+
+        DistributionNetwork network = DistributionNetwork.createDemonstrationNetwork();
+        SensorMonitor monitor = new SensorMonitor(20, 30, network);
+        monitor.addReading(new SensorReading("L7", 230, 10, 250, 10));
+        Set<NetworkLine> atThreshold = monitor.findFaultedLines(network.getLines());
+        assertTrue(!atThreshold.contains(network.getLine("L7")),
+                "line does not trip at exactly 250 V");
+
+        monitor.addReading(new SensorReading("L7", 230, 10, 251, 10));
+        Set<NetworkLine> aboveThreshold = monitor.findFaultedLines(network.getLines());
+        assertTrue(aboveThreshold.contains(network.getLine("L7")),
+                "line trips above 250 V");
+        assertEquals(LineStatus.FAILED, network.getLine("L7").getStatus(),
+                "overvoltage trip line status");
     }
 
     private static void testPriorityQueueOrdering() {

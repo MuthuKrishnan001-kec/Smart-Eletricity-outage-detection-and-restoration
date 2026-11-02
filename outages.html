@@ -7,28 +7,24 @@
     <title>SmartGrid Monitor | Outage Monitoring</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
-  <body>
+  <body class="control-page">
     <div class="app-shell">
       <aside class="sidebar" aria-label="Main navigation">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true"></div>
-          <div class="brand-text">SmartGrid Monitor</div>
+          <div class="brand-text"><strong>SMART GRID</strong><span>CONTROL CENTER</span></div>
         </div>
         <nav class="nav" aria-label="Sidebar navigation">
-          <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
-          <a class="nav-item" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
-          <a class="nav-item active" href="outages.html"><span class="nav-icon">⚠</span> Outage Monitoring</a>
-          <a class="nav-item" href="teams.html"><span class="nav-icon">👥</span> Repair Teams</a>
-          <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
-          <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
+          <a class="nav-item" href="index.html" aria-label="Overview"><span class="nav-icon">⌂</span><span class="nav-label">Overview</span></a>
+          <a class="nav-item" href="network.html" aria-label="Network Monitoring"><span class="nav-icon">⌘</span><span class="nav-label">Network Monitoring</span></a>
+          <a class="nav-item active" href="outages.html#fault-detection" aria-label="Fault Detection" aria-current="page"><span class="nav-icon">⚠</span><span class="nav-label">Fault Detection</span></a>
+          <a class="nav-item" href="teams.html" aria-label="Repair Teams"><span class="nav-icon">♙</span><span class="nav-label">Repair Teams</span></a>
+          <a class="nav-item" href="history.html" aria-label="Outage History"><span class="nav-icon">◷</span><span class="nav-label">Outage History</span></a>
         </nav>
         <div class="sidebar-footer">Live restoration priority queue</div>
       </aside>
 
       <div class="main-panel">
-        <aside class="safety-notice" role="note" aria-label="Electrical safety notice">
-          SAFETY NOTICE: Software-based electricity network simulation only. BFS and graph connectivity identify possible network paths only; this system does not calculate actual voltage, current, load flow, line capacity, or protection coordination. A proposed backup path is not a real-world switching instruction. Simulated operator approval is not electrical authorization. Never use this software to operate real electrical equipment.
-        </aside>
         <header class="topbar">
           <div class="page-heading"><h1>Outage Monitoring</h1></div>
           <div class="topbar-meta">
@@ -37,7 +33,7 @@
           </div>
         </header>
         <main class="content">
-          <article class="card panel">
+          <article id="fault-detection" class="card panel">
             <div class="panel-header">
               <h2 class="panel-title">Pending faults</h2>
               <span class="muted">Sorted by Java restoration priority</span>
@@ -62,7 +58,7 @@
               </table>
             </div>
           </article>
-          <article class="card panel">
+          <article id="restoration-management" class="card panel">
             <div class="panel-header">
               <h2 class="panel-title">Fault restoration tracking</h2>
               <span class="muted">Line repair, consumer restoration, and network restoration are separate states</span>

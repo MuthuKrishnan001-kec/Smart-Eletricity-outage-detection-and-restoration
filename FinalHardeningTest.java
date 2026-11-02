@@ -45,7 +45,7 @@ public final class FinalHardeningTest {
         OutageDetector detector = new OutageDetector();
         RestorationPolicy policy = new RestorationPolicy();
         assertEquals(20, network.getNodes().size(), "node count");
-        assertEquals(21, network.getLines().size(), "line count");
+        assertEquals(24, network.getLines().size(), "line count");
         assertEquals(2, network.getSubstations().size(), "substation count");
         assertEquals(3, policy.getRepairTeams().size(), "repair team count");
         assertEquals(20, detector.findReachableNodes(network).size(),

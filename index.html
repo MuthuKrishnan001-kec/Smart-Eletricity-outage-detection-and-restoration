@@ -3,137 +3,269 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Live SmartGrid Monitor dashboard." />
-    <title>SmartGrid Monitor | Dashboard</title>
+    <meta name="description" content="Live Smart Grid Control Center dashboard." />
+    <title>Smart Grid Control Center | Overview</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
-  <body>
+  <body class="dashboard-page">
     <div class="app-shell">
       <aside class="sidebar" aria-label="Main navigation">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true"></div>
-          <div class="brand-text">SmartGrid Monitor</div>
+          <div class="brand-mark" aria-hidden="true">⚡</div>
+          <div class="brand-text"><strong>SMART GRID</strong><span>CONTROL CENTER</span></div>
+          <button class="sidebar-toggle" type="button" aria-label="Collapse navigation"
+            aria-expanded="true" data-sidebar-toggle>‹</button>
         </div>
         <nav class="nav" aria-label="Sidebar navigation">
-          <a class="nav-item active" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
-          <a class="nav-item" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
-          <a class="nav-item" href="outages.html"><span class="nav-icon">⚠</span> Outage Monitoring</a>
-          <a class="nav-item" href="teams.html"><span class="nav-icon">👥</span> Repair Teams</a>
-          <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
-          <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
+          <a class="nav-item active" href="index.html" aria-label="Overview" aria-current="page">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7"/><path d="M5 9v12h14V9M9 21v-7h6v7"/></svg></span><span class="nav-label">Overview</span>
+          </a>
+          <a class="nav-item" href="network.html" aria-label="Network Monitoring">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><path d="m7 11 10-5M7 13l10 5"/></svg></span><span class="nav-label">Network Monitoring</span>
+          </a>
+          <a class="nav-item" href="outages.html#fault-detection" aria-label="Fault Detection">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5M12 17.5v.1"/></svg></span><span class="nav-label">Fault Detection</span>
+          </a>
+          <a class="nav-item" href="teams.html" aria-label="Repair Teams">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1H3ZM17 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5v1h-3"/></svg></span><span class="nav-label">Repair Teams</span>
+          </a>
+          <a class="nav-item" href="history.html" aria-label="Outage History">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="nav-label">Outage History</span>
+          </a>
         </nav>
-        <div class="sidebar-footer">Live Java grid model</div>
+        <div class="sidebar-footer"><span class="status-dot"></span> Live Java grid model</div>
       </aside>
 
       <div class="main-panel">
-        <aside class="safety-notice" role="note" aria-label="Electrical safety notice">
-          SAFETY NOTICE: Software-based electricity network simulation only. BFS and graph connectivity identify possible network paths only; this system does not calculate actual voltage, current, load flow, line capacity, or protection coordination. A proposed backup path is not a real-world switching instruction. Simulated operator approval is not electrical authorization. Never use this software to operate real electrical equipment.
-        </aside>
         <header class="topbar">
-          <div class="page-heading"><h1>Dashboard</h1></div>
+          <div class="page-heading">
+            <span class="eyebrow">DISTRIBUTION OPERATIONS</span>
+            <h1>Overview</h1>
+          </div>
           <div class="topbar-meta">
             <span class="grid-status-badge is-loading" data-grid-status role="status" aria-live="polite">
               Checking grid…
             </span>
-            <span class="status-pill" data-api-status role="status">Connecting…</span>
-            <a class="header-action" href="index.html">Refresh</a>
+            <span class="status-pill" data-api-status role="status" aria-live="polite">Connecting…</span>
+            <span class="last-updated">Updated <time data-last-updated>—</time></span>
+            <button class="header-action refresh-action" type="button" data-refresh-dashboard>
+              <span aria-hidden="true">↻</span> Refresh
+            </button>
+            <div class="operator-profile" aria-label="Operator profile placeholder">
+              <span class="operator-avatar" aria-hidden="true">●</span>
+              <span>Operator</span>
+            </div>
           </div>
         </header>
-        <main class="content">
-          <section class="section-grid" style="grid-template-columns: minmax(0, 1fr);">
-            <div class="network-action-layout">
-              <article class="card panel">
-                <div class="panel-header">
-                  <h2 class="panel-title">Live network</h2>
-                  <a class="muted" href="network.html">Open network overview</a>
-                </div>
-                <div class="network-board">
-                  <canvas id="networkCanvas" width="1100" height="1000"
-                    style="display: block; width: 100%; max-width: 100%; height: auto;"
-                    aria-label="Live electricity distribution network"></canvas>
-                </div>
-              </article>
-              <section class="card panel network-actions" aria-label="Grid operations">
-                <h2 class="panel-title">Grid operations</h2>
-                <button class="header-action is-primary" type="button" data-grid-action="autoDetect">
-                  Run Detection
-                </button>
-                <button class="header-action is-primary" type="button" data-grid-action="restore">
-                  Auto Restore
-                </button>
-                <button class="header-action" type="button" data-grid-action="reset">Reset</button>
-              </section>
-            </div>
 
-            <article class="card panel">
+        <main class="content">
+          <section class="overview-stats" aria-label="Network summary">
+            <article class="card stat-card">
+              <div class="stat-icon icon-blue" aria-hidden="true">⌘</div>
+              <div class="stat-copy"><span class="stat-label">Total Network Nodes</span>
+                <strong class="stat-value" data-stat="nodes">Loading…</strong>
+                <span class="stat-foot" data-stat-foot="nodes"><i class="stat-indicator is-blue" aria-hidden="true"></i><span class="stat-foot-label">Live network data</span></span></div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-icon icon-cyan" aria-hidden="true">⌁</div>
+              <div class="stat-copy"><span class="stat-label">Distribution Lines</span>
+                <strong class="stat-value" data-stat="lines">Loading…</strong>
+                <span class="stat-foot" data-stat-foot="lines"><i class="stat-indicator is-cyan" aria-hidden="true"></i><span class="stat-foot-label">Live network data</span></span></div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-icon icon-red" aria-hidden="true">⚠</div>
+              <div class="stat-copy"><span class="stat-label">Active Faults</span>
+                <strong class="stat-value" data-stat="faults">Loading…</strong>
+                <span class="stat-foot" data-stat-foot="faults"><i class="stat-indicator is-red" aria-hidden="true"></i><span class="stat-foot-label">Failed lines in the network model</span></span></div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-icon icon-amber" aria-hidden="true">♙</div>
+              <div class="stat-copy"><span class="stat-label">Affected Consumers</span>
+                <strong class="stat-value" data-stat="consumers">Loading…</strong>
+                <span class="stat-foot" data-stat-foot="consumers"><i class="stat-indicator is-amber" aria-hidden="true"></i><span class="stat-foot-label">Disconnected consumer nodes</span></span></div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-icon icon-green" aria-hidden="true">♧</div>
+              <div class="stat-copy"><span class="stat-label">Available Repair Teams</span>
+                <strong class="stat-value" data-stat="teams">Loading…</strong>
+                <span class="stat-foot" data-stat-foot="teams"><i class="stat-indicator is-green" aria-hidden="true"></i><span class="stat-foot-label">Teams reporting AVAILABLE</span></span></div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-icon icon-cyan" aria-hidden="true">✓</div>
+              <div class="stat-copy"><span class="stat-label">Restored Consumers</span>
+                <strong class="stat-value" data-stat="restored">Loading…</strong>
+                <span class="stat-foot" data-stat-foot="restored"><i class="stat-indicator is-cyan" aria-hidden="true"></i><span class="stat-foot-label">Consumers in restored fault reports</span></span></div>
+            </article>
+          </section>
+
+          <section class="health-panel card" aria-labelledby="healthTitle">
+            <div class="health-heading">
+              <div><span class="eyebrow">LIVE NETWORK HEALTH</span><h2 id="healthTitle">Connectivity overview</h2></div>
+              <span class="health-summary" data-health-summary role="status">Loading network status…</span>
+            </div>
+            <div class="health-metrics">
+              <div class="health-metric"><span class="health-dot is-green"></span><span>Working lines</span>
+                <strong data-health-working>—</strong></div>
+              <div class="health-metric"><span class="health-dot is-red"></span><span>Failed lines</span>
+                <strong data-health-failed>—</strong></div>
+              <div class="health-metric"><span class="health-dot is-amber"></span><span>Critical facilities</span>
+                <strong data-health-critical>—</strong></div>
+              <div class="health-metric"><span class="health-dot is-blue"></span><span>Active outage count</span>
+                <strong data-health-outages>—</strong></div>
+            </div>
+            <p class="health-disclaimer">Connectivity reflects graph reachability only; it is not electrical power-flow validation.</p>
+          </section>
+
+          <section class="card panel graph-panel" aria-labelledby="networkGraphTitle">
+            <div class="panel-header graph-header">
+              <div><span class="eyebrow">LIVE TOPOLOGY</span><h2 id="networkGraphTitle" class="panel-title">Distribution network</h2>
+                <p class="muted">Select a node or line for details. Drag to pan; use the wheel or controls to zoom.</p></div>
+              <div class="graph-controls" aria-label="Network graph controls">
+                <button class="header-action graph-control" type="button" data-network-zoom="out" aria-label="Zoom out">−</button>
+                <button class="header-action graph-control" type="button" data-network-zoom="reset" aria-label="Reset zoom">Reset</button>
+                <button class="header-action graph-control" type="button" data-network-zoom="in" aria-label="Zoom in">+</button>
+                <button class="header-action is-primary graph-action" type="button" data-grid-action="autoDetect">Run Detection</button>
+                <button class="header-action graph-action" type="button" data-grid-action="restore">Auto Restore</button>
+                <button class="header-action graph-action" type="button" data-grid-action="reset">Reset</button>
+              </div>
+            </div>
+            <div class="network-layout">
+              <div class="network-board dashboard-network-board">
+                <p class="graph-state" data-graph-status role="status">Loading network graph…</p>
+                <canvas id="networkCanvas" width="1100" height="700" tabindex="0"
+                  aria-label="Interactive electricity distribution network graph. Select nodes and lines for details.">
+                </canvas>
+              </div>
+              <aside class="node-details card" id="networkDetails" aria-labelledby="nodeDetailsTitle" aria-live="polite">
+                <div class="panel-header"><div><span class="eyebrow">SELECTION</span>
+                  <h3 id="nodeDetailsTitle">Network details</h3></div></div>
+                <p class="details-empty" data-details-empty>Select a node or line in the graph to inspect its live details.</p>
+                <dl class="node-detail-list" data-node-details hidden>
+                  <div><dt>ID</dt><dd data-detail="id">—</dd></div>
+                  <div><dt>Name</dt><dd data-detail="name">—</dd></div>
+                  <div><dt>Type</dt><dd data-detail="type">—</dd></div>
+                  <div><dt>Voltage</dt><dd data-detail="voltage">—</dd></div>
+                  <div><dt>Current</dt><dd data-detail="current">—</dd></div>
+                  <div><dt>Connectivity</dt><dd data-detail="status">—</dd></div>
+                  <div><dt>Connected lines</dt><dd data-detail="lines">—</dd></div>
+                  <div><dt>Fault information</dt><dd data-detail="fault">—</dd></div>
+                </dl>
+                <button class="header-action is-primary detail-edit" type="button" data-selection-edit hidden>
+                  Open existing edit workflow
+                </button>
+              </aside>
+            </div>
+            <div class="legend graph-legend" aria-label="Network graph legend">
+              <span class="legend-item"><span class="legend-swatch is-green"></span>Working connection</span>
+              <span class="legend-item"><span class="legend-swatch is-red"></span>Failed connection</span>
+              <span class="legend-item"><span class="legend-swatch is-blue"></span>Approved backup</span>
+              <span class="legend-item"><span class="legend-swatch is-amber"></span>Pending backup proposal</span>
+              <span class="legend-item"><span class="legend-node is-cyan"></span>Substation</span>
+              <span class="legend-item"><span class="legend-node is-white"></span>Critical facility</span>
+              <span class="legend-item"><span class="legend-node is-green"></span>Consumer area</span>
+            </div>
+          </section>
+
+          <section class="dashboard-lower-grid">
+            <article class="card panel" aria-labelledby="recentActivityTitle">
               <div class="panel-header">
-                <h2 class="panel-title">Pending outage queue</h2>
-                <a class="muted" href="outages.html">View all outages</a>
+                <div><span class="eyebrow">EVENT LOG</span><h2 id="recentActivityTitle" class="panel-title">Recent outage activity</h2></div>
+                <a class="muted" href="history.html">View history</a>
               </div>
               <div class="table-wrap">
-                <table id="outagesTable" class="table">
-                  <thead>
-                    <tr><th>Fault</th><th>Line status</th><th>Repair status</th><th>Priority Points</th><th>Affected consumers</th><th>Critical facilities</th><th>Assigned team</th><th>Travel</th><th>Repair</th><th>Total ETA</th></tr>
-                  </thead>
-                  <tbody></tbody>
+                <table id="recentActivityTable" class="table dashboard-table">
+                  <thead><tr><th>Fault ID</th><th>Failed line</th><th>Detection method</th>
+                    <th>Affected consumers</th><th>Assigned repair team</th><th>Repair status</th><th>Timestamp</th></tr></thead>
+                  <tbody><tr><td colspan="7">Loading outage history…</td></tr></tbody>
                 </table>
               </div>
             </article>
-            <article class="card panel">
+            <article class="card panel backup-panel">
               <div class="panel-header">
-                <h2 class="panel-title">Backup link proposals</h2>
-                <a class="muted" href="outages.html">Review all approvals</a>
+                <div><span class="eyebrow">RESTORATION</span><h2 class="panel-title">Backup link approvals</h2></div>
+                <a class="muted" href="outages.html#restoration-management">Manage proposals</a>
               </div>
               <div class="table-wrap">
-                <table id="backupApprovalsTable" class="table">
-                  <thead>
-                    <tr>
-                      <th>Backup line</th>
-                      <th>Current status</th>
-                      <th>Proposed path</th>
-                      <th>Approval status</th>
-                      <th>Affected consumers</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody></tbody>
+                <table id="backupApprovalsTable" class="table dashboard-table">
+                  <thead><tr><th>Backup line</th><th>Current status</th><th>Proposed path</th>
+                    <th>Approval status</th><th>Affected consumers</th><th>Actions</th></tr></thead>
+                  <tbody><tr><td colspan="6">Loading approvals…</td></tr></tbody>
                 </table>
               </div>
             </article>
           </section>
 
-          <section class="section-grid" style="margin-top: 20px;">
-            <article class="card panel">
+          <section class="dashboard-lower-grid">
+            <article class="card panel" aria-labelledby="activeFaultsTitle">
               <div class="panel-header">
-                <h2 class="panel-title">Repair teams</h2>
-                <a class="muted" href="teams.html">View team status</a>
+                <div><span class="eyebrow">RESTORATION QUEUE</span><h2 id="activeFaultsTitle" class="panel-title">Active fault queue</h2></div>
+                <a class="muted" href="outages.html#fault-detection">View all faults</a>
               </div>
               <div class="table-wrap">
-                <table id="teamsTable" class="table">
-                  <thead>
-                    <tr><th>Team ID</th><th>Name</th><th>Depot</th><th>Status</th><th>Fault</th><th>Total ETA</th></tr>
-                  </thead>
-                  <tbody></tbody>
+                <table id="outagesTable" class="table dashboard-table wide-dashboard-table">
+                  <thead><tr><th>Fault ID</th><th>Line status</th><th>Repair status</th>
+                    <th>Priority</th><th>Affected consumers</th><th>Critical facilities</th>
+                    <th>Assigned team</th><th>Travel</th><th>Repair</th><th>Total ETA</th></tr></thead>
+                  <tbody><tr><td colspan="10">Loading active faults…</td></tr></tbody>
                 </table>
               </div>
             </article>
-            <article class="card panel">
+            <article class="card panel" aria-labelledby="repairTeamsTitle">
               <div class="panel-header">
-                <h2 class="panel-title">Recent events</h2>
-                <a class="muted" href="history.html">View history</a>
+                <div><span class="eyebrow">FIELD RESPONSE</span><h2 id="repairTeamsTitle" class="panel-title">Repair team availability</h2></div>
+                <a class="muted" href="teams.html">View all teams</a>
               </div>
               <div class="table-wrap">
-                <table id="historyTable" class="table">
-                  <thead>
-                    <tr><th>Timestamp</th><th>Event</th><th>Line</th><th>Zones</th><th>Team</th><th>Status</th></tr>
-                  </thead>
-                  <tbody></tbody>
+                <table id="teamsTable" class="table dashboard-table teams-dashboard-table">
+                  <thead><tr><th>Team ID</th><th>Name</th><th>Depot</th><th>Status</th>
+                    <th>Assigned fault</th><th>Repair</th><th>Travel</th><th>Total ETA</th></tr></thead>
+                  <tbody><tr><td colspan="8">Loading repair teams…</td></tr></tbody>
                 </table>
               </div>
             </article>
           </section>
         </main>
       </div>
+    </div>
+
+    <div id="editModal" class="modal" hidden>
+      <div class="modal-backdrop" data-modal-cancel></div>
+      <section class="modal-dialog card" role="dialog" aria-modal="true"
+        aria-labelledby="editModalTitle">
+        <div class="panel-header">
+          <h2 id="editModalTitle" class="panel-title">Edit Network Status</h2>
+          <button class="modal-close" type="button" aria-label="Close" data-modal-cancel>&times;</button>
+        </div>
+        <form id="editForm" novalidate>
+          <p id="editSelectionTitle" class="muted"></p>
+          <div id="incidentLineField" class="form-field" hidden>
+            <label for="editLineId">Incident line</label>
+            <select id="editLineId"></select>
+          </div>
+          <div class="form-field">
+            <label for="editVoltage">Observed voltage (V)</label>
+            <input id="editVoltage" type="number" min="0.01" max="1000" step="any" value="230" required />
+          </div>
+          <div id="editStatusField" class="form-field">
+            <label for="editStatus">Status</label>
+            <select id="editStatus" required>
+              <option value="WORKING">WORKING</option>
+              <option value="FAILED">FAILED</option>
+              <option value="STANDBY">STANDBY</option>
+            </select>
+          </div>
+          <div id="repairTimeField" class="form-field" hidden>
+            <label for="repairTimeMinutes">Estimated repair time (minutes)</label>
+            <input id="repairTimeMinutes" type="text" inputmode="numeric"
+              pattern="[0-9]+" maxlength="10" required />
+          </div>
+          <p id="editError" class="modal-error" role="alert"></p>
+          <div class="modal-actions">
+            <button id="applyEditButton" class="header-action" type="submit">Apply Changes</button>
+            <button class="header-action" type="button" data-modal-cancel>Cancel</button>
+          </div>
+        </form>
+      </section>
     </div>
     <script src="app.js"></script>
   </body>

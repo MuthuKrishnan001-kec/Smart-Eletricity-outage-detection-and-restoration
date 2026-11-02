@@ -7,28 +7,24 @@
     <title>SmartGrid Monitor | Network Overview</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
-  <body>
+  <body class="control-page">
     <div class="app-shell">
       <aside class="sidebar" aria-label="Main navigation">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true"></div>
-          <div class="brand-text">SmartGrid Monitor</div>
+          <div class="brand-text"><strong>SMART GRID</strong><span>CONTROL CENTER</span></div>
         </div>
         <nav class="nav" aria-label="Sidebar navigation">
-          <a class="nav-item" href="index.html"><span class="nav-icon">▣</span> Dashboard</a>
-          <a class="nav-item active" href="network.html"><span class="nav-icon">◎</span> Network Overview</a>
-          <a class="nav-item" href="outages.html"><span class="nav-icon">⚠</span> Outage Monitoring</a>
-          <a class="nav-item" href="teams.html"><span class="nav-icon">👥</span> Repair Teams</a>
-          <a class="nav-item" href="history.html"><span class="nav-icon">◫</span> History</a>
-          <a class="nav-item" href="settings.html"><span class="nav-icon">⚙</span> Settings</a>
+          <a class="nav-item" href="index.html" aria-label="Overview"><span class="nav-icon">⌂</span><span class="nav-label">Overview</span></a>
+          <a class="nav-item active" href="network.html" aria-label="Network Monitoring" aria-current="page"><span class="nav-icon">⌘</span><span class="nav-label">Network Monitoring</span></a>
+          <a class="nav-item" href="outages.html#fault-detection" aria-label="Fault Detection"><span class="nav-icon">⚠</span><span class="nav-label">Fault Detection</span></a>
+          <a class="nav-item" href="teams.html" aria-label="Repair Teams"><span class="nav-icon">♙</span><span class="nav-label">Repair Teams</span></a>
+          <a class="nav-item" href="history.html" aria-label="Outage History"><span class="nav-icon">◷</span><span class="nav-label">Outage History</span></a>
         </nav>
         <div class="sidebar-footer">Live Java network state</div>
       </aside>
 
       <div class="main-panel">
-        <aside class="safety-notice" role="note" aria-label="Electrical safety notice">
-          SAFETY NOTICE: Software-based electricity network simulation only. BFS and graph connectivity identify possible network paths only; this system does not calculate actual voltage, current, load flow, line capacity, or protection coordination. A proposed backup path is not a real-world switching instruction. Simulated operator approval is not electrical authorization. Never use this software to operate real electrical equipment.
-        </aside>
         <header class="topbar">
           <div class="page-heading"><h1>Network Overview</h1></div>
           <div class="topbar-meta">
@@ -72,7 +68,8 @@
                 <thead>
                   <tr>
                     <th>Line</th><th>Status</th><th>Repair status</th>
-                    <th>Backup approval</th><th>Affected consumers</th>
+                    <th>Backup approval</th><th>Observed voltage</th>
+                    <th>Observed current</th><th>Affected consumers</th>
                     <th>Critical facilities</th><th>Repair team</th>
                     <th>Repair</th><th>Travel</th><th>Total ETA</th>
                     <th>Consumers restored</th><th>Network restored</th>
@@ -93,7 +90,7 @@
           <h2 id="editModalTitle" class="panel-title">Edit Network Status</h2>
           <button class="modal-close" type="button" aria-label="Close" data-modal-cancel>&times;</button>
         </div>
-        <form id="editForm">
+        <form id="editForm" novalidate>
           <p id="editSelectionTitle" class="muted"></p>
           <div id="incidentLineField" class="form-field" hidden>
             <label for="editLineId">Incident line</label>
@@ -101,7 +98,7 @@
           </div>
           <div class="form-field">
             <label for="editVoltage">Observed voltage (V)</label>
-            <input id="editVoltage" type="number" min="0" max="1000" step="1" value="230" required />
+            <input id="editVoltage" type="number" min="0.01" max="1000" step="any" value="230" required />
           </div>
           <div id="editStatusField" class="form-field">
             <label for="editStatus">Status</label>

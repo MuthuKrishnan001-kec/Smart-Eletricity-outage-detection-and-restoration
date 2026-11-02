@@ -38,15 +38,25 @@ public class Phase4PersistenceTest {
             }
 
             events = historyManager.loadHistory();
-            assertEquals(4, events.size(), "persisted event count");
-            assertEquals("FAULT_DETECTED", events.get(1)[1], "fault event type");
-            assertEquals("BACKUP_LINK_PROPOSED", events.get(2)[1], "backup proposal event type");
-            assertEquals("REPAIR_COMPLETED", events.get(3)[1], "repair event type");
+            assertEquals(6, events.size(), "persisted event count");
+            String[] repairEvent = null;
+            boolean faultDetected = false;
+            boolean backupProposed = false;
+            for (String[] event : events) {
+                faultDetected |= "FAULT_DETECTED".equals(event[1]);
+                backupProposed |= "BACKUP_LINK_PROPOSED".equals(event[1]);
+                if ("REPAIR_COMPLETED".equals(event[1])) {
+                    repairEvent = event;
+                }
+            }
+            assertEquals(true, faultDetected, "fault event type");
+            assertEquals(true, backupProposed, "backup proposal event type");
+            assertEquals("REPAIR_COMPLETED", repairEvent[1], "repair event type");
             assertEquals(LineStatus.STANDBY, network.getLine("L14").getStatus(),
                     "standby backup must remain inactive unless an operator approves it");
-            if (!events.get(3)[5].contains("TRAVEL_TIME=15m")
-                    || !events.get(3)[5].contains("REPAIR_TIME=35m")
-                    || !events.get(3)[5].contains("ESTIMATED_RESTORATION=50m")) {
+            if (!repairEvent[5].contains("TRAVEL_TIME=15m")
+                    || !repairEvent[5].contains("REPAIR_TIME=35m")
+                    || !repairEvent[5].contains("ESTIMATED_RESTORATION=50m")) {
                 throw new AssertionError(
                         "Repair, travel, and total ETA should be persisted in repair history.");
             }

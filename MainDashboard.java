@@ -61,6 +61,7 @@ public class MainDashboard extends JFrame {
     private final OutageDetector outageDetector = new OutageDetector();
     private final RestorationPolicy restorationPolicy =
             RestorationPolicy.withHistoryManager(historyManager);
+    private final Object apiModelLock = new Object();
     private final List<NetworkNode> lastAffectedNodes = new ArrayList<>();
     private final Map<String, Double> nodeObservedVoltages = new HashMap<>();
     private SensorMonitor sensorMonitor = createSensorMonitor();
@@ -91,18 +92,18 @@ public class MainDashboard extends JFrame {
     public static void startHttpServer() {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(8081), 0);
-            server.createContext("/api/network", exchange -> handleDashboardRequest(
-                    exchange, "GET", MainDashboard::buildNetworkPayload));
-            server.createContext("/api/outages", exchange -> handleDashboardRequest(
-                    exchange, "GET", MainDashboard::buildOutageQueuePayload));
-            server.createContext("/api/history", exchange -> handleDashboardRequest(
-                    exchange, "GET", MainDashboard::buildHistoryPayload));
-            server.createContext("/api/backup-approvals", exchange -> handleDashboardRequest(
-                    exchange, "GET", MainDashboard::buildBackupApprovalsPayload));
-            server.createContext("/api/teams", exchange -> handleDashboardRequest(
-                    exchange, "GET", MainDashboard::buildTeamPayload));
-            server.createContext("/api/health", exchange -> handleDashboardRequest(
-                    exchange, "GET", dashboard ->
+            server.createContext("/api/network", exchange -> handleDashboardReadRequest(
+                    exchange, MainDashboard::buildNetworkPayload));
+            server.createContext("/api/outages", exchange -> handleDashboardReadRequest(
+                    exchange, MainDashboard::buildOutageQueuePayload));
+            server.createContext("/api/history", exchange -> handleDashboardReadRequest(
+                    exchange, MainDashboard::buildHistoryPayload));
+            server.createContext("/api/backup-approvals", exchange -> handleDashboardReadRequest(
+                    exchange, MainDashboard::buildBackupApprovalsPayload));
+            server.createContext("/api/teams", exchange -> handleDashboardReadRequest(
+                    exchange, MainDashboard::buildTeamPayload));
+            server.createContext("/api/health", exchange -> handleDashboardReadRequest(
+                    exchange, dashboard ->
                             "{\"status\":\"ok\",\"service\":\"smart-grid-api\"}"));
             server.createContext("/api/actions/simulate-fault", exchange ->
                     handleDashboardAction(exchange, (dashboard, request) ->
@@ -126,12 +127,8 @@ public class MainDashboard extends JFrame {
             server.createContext("/api/actions/reset", exchange ->
                     handleDashboardAction(exchange, (dashboard, request) ->
                             dashboard.resetGrid()));
-            server.createContext("/api/action", exchange ->
-                    handleDashboardAction(exchange, (dashboard, request) ->
-                            dashboard.applyManualLineEdit(readManualEdit(request))));
-            server.createContext("/api/node-voltage", exchange ->
-                    handleDashboardAction(exchange, (dashboard, request) ->
-                            dashboard.applyNodeVoltageEdit(readNodeVoltageEdit(request))));
+            server.createContext("/api/action", MainDashboard::handleManualLineEditRequest);
+            server.createContext("/api/node-voltage", MainDashboard::handleNodeVoltageEditRequest);
             server.createContext("/", exchange -> {
                 addCorsHeaders(exchange);
                 if (exchange.getRequestMethod().equalsIgnoreCase("OPTIONS")) {
@@ -167,6 +164,147 @@ public class MainDashboard extends JFrame {
         });
     }
 
+    private static void handleDashboardReadRequest(
+            HttpExchange exchange, DashboardOperation operation) throws IOException {
+        addCorsHeaders(exchange);
+        if (exchange.getRequestMethod().equalsIgnoreCase("OPTIONS")) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+        int responseStatus = 200;
+        String responseBody;
+        if (!exchange.getRequestMethod().equalsIgnoreCase("GET")) {
+            responseStatus = 405;
+            responseBody = "{\"error\":\"Method not allowed\"}";
+        } else {
+            MainDashboard dashboard = apiDashboard;
+            if (dashboard == null) {
+                responseStatus = 409;
+                responseBody = "{\"error\":\"Dashboard is not ready.\"}";
+            } else {
+                try {
+                    synchronized (dashboard.apiModelLock) {
+                        responseBody = operation.run(dashboard);
+                    }
+                } catch (IllegalArgumentException exception) {
+                    responseStatus = 400;
+                    responseBody = "{\"error\":\""
+                            + escapeJson(exception.getMessage()) + "\"}";
+                } catch (IllegalStateException exception) {
+                    responseStatus = 409;
+                    responseBody = "{\"error\":\""
+                            + escapeJson(exception.getMessage()) + "\"}";
+                } catch (Exception exception) {
+                    responseStatus = 500;
+                    responseBody = "{\"error\":\""
+                            + escapeJson(exception.getMessage()) + "\"}";
+                }
+            }
+        }
+        sendJsonResponse(exchange, responseStatus, responseBody);
+    }
+
+    private static void handleManualLineEditRequest(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        if (exchange.getRequestMethod().equalsIgnoreCase("OPTIONS")) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+        if (!exchange.getRequestMethod().equalsIgnoreCase("POST")) {
+            sendJsonResponse(exchange, 405, "{\"error\":\"Method not allowed\"}");
+            return;
+        }
+
+        final ManualLineEdit edit;
+        try {
+            String requestBody = new String(
+                    exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            edit = readManualEdit(requestBody);
+        } catch (IllegalArgumentException exception) {
+            sendJsonResponse(exchange, 400,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            return;
+        } catch (IOException exception) {
+            sendJsonResponse(exchange, 400,
+                    "{\"error\":\"Unable to read request body.\"}");
+            return;
+        }
+
+        MainDashboard dashboard = apiDashboard;
+        if (dashboard == null) {
+            sendJsonResponse(exchange, 409, "{\"error\":\"Dashboard is not ready.\"}");
+            return;
+        }
+        try {
+            String response;
+            synchronized (dashboard.apiModelLock) {
+                response = dashboard.applyManualLineEditFromApi(edit);
+            }
+            sendJsonResponse(exchange, 200, response);
+        } catch (IllegalArgumentException exception) {
+            sendJsonResponse(exchange, 400,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+        } catch (IllegalStateException exception) {
+            sendJsonResponse(exchange, 409,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+        } catch (Exception exception) {
+            sendJsonResponse(exchange, 500,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+        }
+    }
+
+    private static void handleNodeVoltageEditRequest(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        if (exchange.getRequestMethod().equalsIgnoreCase("OPTIONS")) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+        if (!exchange.getRequestMethod().equalsIgnoreCase("POST")) {
+            sendJsonResponse(exchange, 405, "{\"error\":\"Method not allowed\"}");
+            return;
+        }
+
+        final NodeVoltageEdit edit;
+        try {
+            String requestBody = new String(
+                    exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            edit = readNodeVoltageEdit(requestBody);
+        } catch (IllegalArgumentException exception) {
+            sendJsonResponse(exchange, 400,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+            return;
+        } catch (IOException exception) {
+            sendJsonResponse(exchange, 400,
+                    "{\"error\":\"Unable to read request body.\"}");
+            return;
+        }
+
+        MainDashboard dashboard = apiDashboard;
+        if (dashboard == null) {
+            sendJsonResponse(exchange, 409, "{\"error\":\"Dashboard is not ready.\"}");
+            return;
+        }
+        try {
+            String response;
+            synchronized (dashboard.apiModelLock) {
+                response = dashboard.applyNodeVoltageEditFromApi(edit);
+            }
+            sendJsonResponse(exchange, 200, response);
+        } catch (IllegalArgumentException exception) {
+            sendJsonResponse(exchange, 400,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+        } catch (IllegalStateException exception) {
+            sendJsonResponse(exchange, 409,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+        } catch (Exception exception) {
+            sendJsonResponse(exchange, 500,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+        }
+    }
+
     private static void handleDashboardRequest(
             HttpExchange exchange, String expectedMethod, DashboardOperation operation)
             throws IOException {
@@ -185,6 +323,9 @@ public class MainDashboard extends JFrame {
             sendJsonResponse(exchange, 200, jsonPayload);
         } catch (IllegalArgumentException exception) {
             sendJsonResponse(exchange, 400,
+                    "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
+        } catch (IllegalStateException exception) {
+            sendJsonResponse(exchange, 409,
                     "{\"error\":\"" + escapeJson(exception.getMessage()) + "\"}");
         } catch (Exception exception) {
             sendJsonResponse(exchange, 500,
@@ -227,9 +368,7 @@ public class MainDashboard extends JFrame {
         return matcher.group(1);
     }
 
-    private static ManualLineEdit readManualEdit(HttpExchange exchange) throws IOException {
-        String requestBody = new String(
-                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    private static ManualLineEdit readManualEdit(String requestBody) {
         Matcher lineMatcher = LINE_ID_PATTERN.matcher(requestBody);
         Matcher voltageMatcher = VOLTAGE_PATTERN.matcher(requestBody);
         Matcher statusMatcher = STATUS_PATTERN.matcher(requestBody);
@@ -253,10 +392,7 @@ public class MainDashboard extends JFrame {
                 status, repairTimeMinutes);
     }
 
-    private static NodeVoltageEdit readNodeVoltageEdit(HttpExchange exchange)
-            throws IOException {
-        String requestBody = new String(
-                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    private static NodeVoltageEdit readNodeVoltageEdit(String requestBody) {
         Matcher nodeMatcher = NODE_ID_PATTERN.matcher(requestBody);
         Matcher voltageMatcher = VOLTAGE_PATTERN.matcher(requestBody);
         if (!nodeMatcher.find() || !voltageMatcher.find()) {
@@ -280,9 +416,11 @@ public class MainDashboard extends JFrame {
             HttpExchange exchange, int statusCode, String jsonPayload) throws IOException {
         byte[] responseBytes = jsonPayload.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
-        exchange.sendResponseHeaders(statusCode, responseBytes.length);
-        try (OutputStream outputStream = exchange.getResponseBody()) {
-            outputStream.write(responseBytes);
+        try {
+            exchange.sendResponseHeaders(statusCode, responseBytes.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(responseBytes);
+            }
         } finally {
             exchange.close();
         }
@@ -339,6 +477,9 @@ public class MainDashboard extends JFrame {
                 .append("\"observedVoltage\":")
                 .append(sensorMonitor.getReading(line.getId()) == null ? 230
                         : sensorMonitor.getReading(line.getId()).getObservedVoltage()).append(',')
+                .append("\"observedCurrent\":")
+                .append(sensorMonitor.getReading(line.getId()) == null ? 10
+                        : sensorMonitor.getReading(line.getId()).getObservedCurrent()).append(',')
                 .append("\"repairTimeMinutes\":").append(line.getRepairTimeMinutes())
                 .append(",\"repairStatus\":\"")
                 .append(report == null
@@ -478,14 +619,15 @@ public class MainDashboard extends JFrame {
     private void appendRestorationReport(StringBuilder json, FaultReport report) {
         NetworkLine line = report.getFailedLine();
         RepairTeam team = report.getAssignedTeam();
-        json.append("{\"lineId\":\"").append(escapeJson(line.getId()))
+        json.append("{\"reportId\":").append(report.getReportOrder())
+            .append(",\"lineId\":\"").append(escapeJson(line.getId()))
             .append("\",\"lineStatus\":\"").append(line.getStatus().name())
-            .append("\",\"lineRepairCompleted\":").append(report.isLineRepairCompleted())
-            .append(",\"affectedConsumersRestored\":")
-            .append(report.areAffectedConsumersRestored())
-            .append(",\"networkFullyRestored\":")
-            .append(report.isNetworkFullyRestored())
-            .append(",\"affectedConsumers\":[");
+            .append('"');
+        appendBooleanField(json, "lineRepairCompleted", report.isLineRepairCompleted());
+        appendBooleanField(
+                json, "affectedConsumersRestored", report.areAffectedConsumersRestored());
+        appendBooleanField(json, "networkFullyRestored", report.isNetworkFullyRestored());
+        json.append(",\"affectedConsumers\":[");
         boolean firstConsumer = true;
         for (NetworkNode node : report.getAffectedNodes()) {
             if (!(node instanceof ConsumerArea)) {
@@ -544,16 +686,17 @@ public class MainDashboard extends JFrame {
             }
             RepairTeam team = report.getAssignedTeam();
             NetworkLine line = report.getFailedLine();
-            json.append("{\"faultId\":\"").append(escapeJson(line.getId()))
+            json.append("{\"reportId\":").append(report.getReportOrder())
+                .append(",\"faultId\":\"").append(escapeJson(line.getId()))
                 .append("-Fault\",\"lineId\":\"").append(escapeJson(line.getId()))
                 .append("\",\"lineStatus\":\"").append(line.getStatus().name())
                 .append("\",\"lineRepairStatus\":\"")
                 .append(report.isLineRepairCompleted() ? "LINE_REPAIRED" : "REPAIR_PENDING")
-                .append("\",\"affectedConsumersRestored\":")
-                .append(report.areAffectedConsumersRestored())
-                .append("\",\"networkFullyRestored\":")
-                .append(report.isNetworkFullyRestored())
-                .append("\",\"priorityScore\":").append(report.getPriorityScore())
+                .append('"');
+            appendBooleanField(
+                    json, "affectedConsumersRestored", report.areAffectedConsumersRestored());
+            appendBooleanField(json, "networkFullyRestored", report.isNetworkFullyRestored());
+            json.append(",\"priorityScore\":").append(report.getPriorityScore())
                 .append(",\"affectedNodes\":[");
             List<NetworkNode> affectedNodes = report.getAffectedNodes();
             for (int nodeIndex = 0; nodeIndex < affectedNodes.size(); nodeIndex++) {
@@ -597,6 +740,10 @@ public class MainDashboard extends JFrame {
             appendRestorationReport(json, allReports.get(index));
         }
         return json.append("]}").toString();
+    }
+
+    private static void appendBooleanField(StringBuilder json, String fieldName, boolean value) {
+        json.append(",\"").append(fieldName).append("\":").append(value);
     }
 
     private String buildTeamPayload() {
@@ -791,22 +938,6 @@ public class MainDashboard extends JFrame {
         JPanel headerContainer = new JPanel(new BorderLayout(0, 10));
         headerContainer.setOpaque(false);
         headerContainer.add(header, BorderLayout.NORTH);
-        JPanel safetyPanel = new JPanel(new BorderLayout());
-        safetyPanel.setBackground(new Color(255, 248, 225));
-        safetyPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(232, 190, 82)),
-                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
-        JTextArea safetyText = new JTextArea(SafetyNotice.TEXT);
-        safetyText.setEditable(false);
-        safetyText.setFocusable(false);
-        safetyText.setLineWrap(true);
-        safetyText.setWrapStyleWord(true);
-        safetyText.setRows(3);
-        safetyText.setOpaque(false);
-        safetyText.setForeground(new Color(102, 71, 12));
-        safetyText.setFont(safetyText.getFont().deriveFont(Font.BOLD, 11f));
-        safetyPanel.add(safetyText, BorderLayout.CENTER);
-        headerContainer.add(safetyPanel, BorderLayout.SOUTH);
         add(headerContainer, BorderLayout.NORTH);
 
         JPanel networkPanel = new JPanel(new BorderLayout(0, 12));
@@ -881,7 +1012,7 @@ public class MainDashboard extends JFrame {
 
     private void simulateCityEvent(String eventType) {
         try {
-            simulateCityEventCore(eventType);
+            simulateCityEventCore(eventType, true);
         } catch (IllegalArgumentException | IllegalStateException exception) {
             showError(exception.getMessage());
         } catch (UncheckedIOException exception) {
@@ -890,12 +1021,12 @@ public class MainDashboard extends JFrame {
     }
 
     private void simulateCityEventFromApi(String eventType) {
-        simulateCityEventCore(eventType);
+        simulateCityEventCore(eventType, false);
     }
 
-    private void simulateCityEventCore(String eventType) {
+    private void simulateCityEventCore(String eventType, boolean promptForRepairTime) {
         List<NetworkLine> affectedLines = sensorMonitor.simulateCityEvent(eventType);
-        runDetectionCore();
+        runDetectionCore(null, promptForRepairTime);
         List<String> lineIds = new ArrayList<>();
         for (NetworkLine line : affectedLines) {
             lineIds.add(line.getId());
@@ -908,8 +1039,14 @@ public class MainDashboard extends JFrame {
     }
 
     private void runDetectionAfterEdit(NetworkLine editedLine) {
-        runDetection(editedLine != null && editedLine.getStatus() == LineStatus.FAILED
-                ? editedLine.getId() : null);
+        try {
+            runDetectionCore(
+                    editedLine != null && editedLine.getStatus() == LineStatus.FAILED
+                            ? editedLine.getId() : null,
+                    false);
+        } catch (UncheckedIOException exception) {
+            showError(exception.getMessage());
+        }
     }
 
     private void runDetection(String lineWithOperatorEnteredRepairTime) {
@@ -921,15 +1058,38 @@ public class MainDashboard extends JFrame {
     }
 
     private void runDetectionCore() {
-        runDetectionCore(null);
+        runDetectionCore(null, false);
     }
 
     private void runDetectionCore(String lineWithOperatorEnteredRepairTime) {
+        runDetectionCore(lineWithOperatorEnteredRepairTime, true);
+    }
+
+    private void runDetectionCore(
+            String lineWithOperatorEnteredRepairTime, boolean promptForRepairTime) {
+        try {
+            int newFaults = runDetectionModel(
+                    lineWithOperatorEnteredRepairTime, promptForRepairTime);
+            refreshDashboard();
+            statusLabel.setText("Detection complete | " + lastAffectedNodes.size()
+                    + " affected node(s) | " + newFaults + " new fault(s)");
+        } catch (UncheckedIOException exception) {
+            refreshDashboard();
+            statusLabel.setText("Faults queued; outage history could not be saved");
+            throw exception;
+        }
+    }
+
+    private int runDetectionModel(
+            String lineWithOperatorEnteredRepairTime, boolean promptForRepairTime) {
         OutageDiagnostics diagnostics = outageDetector.detectFaults(network, sensorMonitor);
+        List<UncheckedIOException> historyFailures =
+                sensorMonitor.drainHistoryWriteFailures();
         int newFaults = 0;
         for (NetworkLine line : diagnostics.getFaultedLines()) {
             if (!restorationPolicy.isPendingFault(line)) {
-                if (!line.getId().equals(lineWithOperatorEnteredRepairTime)) {
+                if (!line.getId().equals(lineWithOperatorEnteredRepairTime)
+                        && promptForRepairTime) {
                     Integer repairMinutes = promptRepairTime(line);
                     if (repairMinutes == null) {
                         line.restoreLine();
@@ -938,15 +1098,31 @@ public class MainDashboard extends JFrame {
                     }
                     line.setRepairTimeMinutes(repairMinutes);
                 }
-                recordFaultReport(line, diagnostics.getAffectedNodes());
-                newFaults++;
+                try {
+                    recordFaultReport(line, diagnostics.getAffectedNodes());
+                    newFaults++;
+                } catch (UncheckedIOException exception) {
+                    if (restorationPolicy.isPendingFault(line)) {
+                        newFaults++;
+                    }
+                    historyFailures.add(exception);
+                }
             }
         }
         lastAffectedNodes.clear();
         lastAffectedNodes.addAll(outageDetector.findAffectedNodes(network));
-        refreshDashboard();
-        statusLabel.setText("Detection complete | " + lastAffectedNodes.size()
-                + " affected node(s) | " + newFaults + " new fault(s)");
+        if (!historyFailures.isEmpty()) {
+            IOException cause = historyFailures.get(0).getCause();
+            for (int index = 1; index < historyFailures.size(); index++) {
+                cause.addSuppressed(historyFailures.get(index).getCause());
+            }
+            throw new UncheckedIOException(
+                    "Faults were detected and queued, but history could not be saved. "
+                            + "Close outage_history.csv in Excel or another application "
+                            + "and retry detection.",
+                    cause);
+        }
+        return newFaults;
     }
 
     private void autoRestore() {
@@ -1027,13 +1203,21 @@ public class MainDashboard extends JFrame {
         statusLabel.setText("Grid reset | normal lines WORKING | backup lines STANDBY");
     }
 
-    private void applyManualLineEdit(ManualLineEdit edit) {
-        if (!Double.isFinite(edit.voltage) || edit.voltage < 0 || edit.voltage > 1000) {
-            throw new IllegalArgumentException("Voltage must be between 0 and 1000 volts.");
+    private String applyManualLineEditFromApi(ManualLineEdit edit) {
+        if (!Double.isFinite(edit.voltage) || edit.voltage <= 0 || edit.voltage > 1000) {
+            throw new IllegalArgumentException(
+                    "Voltage must be a positive number no greater than 1000 volts.");
         }
         NetworkLine line = network.getLine(edit.lineId);
         if (line == null) {
             throw new IllegalArgumentException("Unknown line: " + edit.lineId);
+        }
+        boolean managedPrimaryRepair = edit.status == LineStatus.WORKING
+                && !line.isBackupLink() && line.getStatus() == LineStatus.FAILED
+                && restorationPolicy.isPendingFault(line);
+        if (managedPrimaryRepair) {
+            restorationPolicy.restoreFault(line.getId(), network, outageDetector);
+            sensorMonitor.clearAnomaly(line.getId());
         }
         if (edit.status == LineStatus.STANDBY && !line.isBackupLink()) {
             throw new IllegalArgumentException(
@@ -1047,13 +1231,17 @@ public class MainDashboard extends JFrame {
         }
 
         if (edit.status == LineStatus.FAILED) {
+            if (!line.isWorking() && line.getStatus() != LineStatus.FAILED) {
+                throw new IllegalStateException(
+                        "Only working or already-failed lines can be marked FAILED.");
+            }
             line.failLine(edit.repairTimeMinutes);
         } else if (edit.status == LineStatus.STANDBY) {
             if (line.getStatus() == LineStatus.FAILED) {
                 line.restoreLine();
             }
             line.deactivateBackup();
-        } else {
+        } else if (!managedPrimaryRepair) {
             if (!line.isBackupLink()) {
                 line.restoreLine();
             }
@@ -1065,14 +1253,48 @@ public class MainDashboard extends JFrame {
                     line.getId(), reading.getNormalVoltage(), reading.getNormalCurrent(),
                     edit.voltage, reading.getObservedCurrent()));
         }
-        runDetectionCore(edit.status == LineStatus.FAILED ? line.getId() : null);
-        statusLabel.setText("Manual update applied | " + line.getId()
+        runDetectionModel(edit.status == LineStatus.FAILED ? line.getId() : null, false);
+        String message = "Manual update applied | " + line.getId()
                 + " " + line.getStatus() + " | " + edit.voltage + " V"
                 + (line.getStatus() == LineStatus.FAILED
-                        ? " | repair " + line.getRepairTimeMinutes() + " min" : ""));
+                        ? " | repair " + line.getRepairTimeMinutes() + " min" : "");
+        SwingUtilities.invokeLater(() -> {
+            synchronized (apiModelLock) {
+                refreshDashboard();
+                statusLabel.setText(message);
+            }
+        });
+        return manualLineEditResponse(line.getId());
     }
 
-    private void applyNodeVoltageEdit(NodeVoltageEdit edit) {
+    private String manualLineEditResponse(String lineId) {
+        NetworkLine line = network.getLine(lineId);
+        if (line == null) {
+            throw new IllegalStateException("Updated line is no longer available: " + lineId);
+        }
+        SensorReading reading = sensorMonitor.getReading(lineId);
+        double observedVoltage = reading == null
+                ? NORMAL_VOLTAGE : reading.getObservedVoltage();
+        return "{\"status\":\"ok\",\"line\":{\"id\":\""
+                + escapeJson(line.getId()) + "\",\"status\":\""
+                + line.getStatus().name() + "\",\"observedVoltage\":"
+                + observedVoltage + ",\"repairTimeMinutes\":"
+                + line.getRepairTimeMinutes() + "}}";
+    }
+
+    private String nodeVoltageEditResponse(String nodeId, int detectedFaultCount) {
+        NetworkNode node = network.getNode(nodeId);
+        Double observedVoltage = nodeObservedVoltages.get(nodeId);
+        if (node == null || observedVoltage == null) {
+            throw new IllegalStateException("Updated node is no longer available: " + nodeId);
+        }
+        return "{\"status\":\"ok\",\"node\":{\"id\":\""
+                + escapeJson(node.getId()) + "\",\"observedVoltage\":"
+                + observedVoltage + "},\"detectedFaultCount\":"
+                + detectedFaultCount + "}";
+    }
+
+    private String applyNodeVoltageEditFromApi(NodeVoltageEdit edit) {
         if (!Double.isFinite(edit.voltage) || edit.voltage < 0 || edit.voltage > 1000) {
             throw new IllegalArgumentException("Voltage must be between 0 and 1000 volts.");
         }
@@ -1081,14 +1303,22 @@ public class MainDashboard extends JFrame {
             throw new IllegalArgumentException("Unknown node: " + edit.nodeId);
         }
         nodeObservedVoltages.put(edit.nodeId, edit.voltage);
-        canvas.repaint();
-        statusLabel.setText("Node voltage updated | " + edit.nodeId
-                + " | " + edit.voltage + " V");
+        sensorMonitor.updateIncidentLineVoltage(edit.nodeId, edit.voltage);
+        int detectedFaultCount = runDetectionModel(null, false);
+        SwingUtilities.invokeLater(() -> {
+            synchronized (apiModelLock) {
+                refreshDashboard();
+                statusLabel.setText("Node voltage updated | " + edit.nodeId
+                        + " | " + edit.voltage + " V | "
+                        + detectedFaultCount + " new fault(s)");
+            }
+        });
+        return nodeVoltageEditResponse(edit.nodeId, detectedFaultCount);
     }
 
     private boolean isNodeVoltageAlert(double voltage) {
-        return voltage < NORMAL_VOLTAGE
-                * (1 - VOLTAGE_DROP_THRESHOLD_PERCENT / 100);
+        return SensorReading.isVoltageAbnormal(
+                voltage, NORMAL_VOLTAGE, VOLTAGE_DROP_THRESHOLD_PERCENT);
     }
 
     private Integer promptRepairTime(NetworkLine line) {
