@@ -1,0 +1,8 @@
+.git
+.vscode
+*.class
+*.csv
+*.html
+*.js
+*.md
+css

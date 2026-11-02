@@ -16,7 +16,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class WebServer {
-    private static final int PORT = 8081;
     private static final double NORMAL_VOLTAGE = 230.0;
     private static final double VOLTAGE_DROP_THRESHOLD_PERCENT = 20.0;
 
@@ -28,25 +27,29 @@ public final class WebServer {
     private SensorMonitor sensorMonitor;
 
     private WebServer() {
-        this(Paths.get("outage_history.csv"));
+        this(new HistoryManager());
     }
 
     private WebServer(Path historyFile) {
+        this(new HistoryManager(historyFile));
+    }
+
+    private WebServer(HistoryManager historyManager) {
         network = DistributionNetwork.createDemonstrationNetwork();
-        historyManager = new HistoryManager(historyFile);
+        this.historyManager = historyManager;
         restorationPolicy = RestorationPolicy.withHistoryManager(historyManager);
         sensorMonitor = createSensorMonitor();
     }
 
     public static void main(String[] args) throws IOException {
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : PORT;
-        Path historyFile = args.length > 1
-                ? Paths.get(args[1]) : Paths.get("outage_history.csv");
-        WebServer application = new WebServer(historyFile);
-        HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+        int port = args.length > 0
+                ? Integer.parseInt(args[0]) : HttpServerConfig.portFromEnvironment();
+        WebServer application = args.length > 1
+                ? new WebServer(Paths.get(args[1])) : new WebServer();
+        HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
         server.createContext("/", application::handleRequest);
         server.start();
-        System.out.println("SmartGrid HTTP API running on http://localhost:" + port);
+        System.out.println("SmartGrid HTTP API listening on 0.0.0.0:" + port);
     }
 
     private void handleRequest(HttpExchange exchange) throws IOException {
@@ -861,9 +864,7 @@ public final class WebServer {
     }
 
     private static void addCorsHeaders(HttpExchange exchange) {
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+        HttpServerConfig.addCorsHeaders(exchange);
     }
 
     private static boolean isGetEndpoint(String path) {

@@ -19,11 +19,19 @@ public class HistoryManager {
     private final Path historyFile;
 
     public HistoryManager() {
-        this(Paths.get("outage_history.csv"));
+        this(defaultHistoryPath());
     }
 
     public HistoryManager(Path historyFile) {
         this.historyFile = Objects.requireNonNull(historyFile, "historyFile");
+    }
+
+    private static Path defaultHistoryPath() {
+        String dataDirectory = System.getenv("DATA_DIR");
+        if (dataDirectory == null || dataDirectory.trim().isEmpty()) {
+            return Paths.get("outage_history.csv");
+        }
+        return Paths.get(dataDirectory).resolve("outage_history.csv");
     }
 
     public synchronized void logEvent(

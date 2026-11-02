@@ -1,4 +1,6 @@
-const API_BASE = 'http://localhost:8081/api';
+const API_BASE = String(
+  window.SMART_GRID_API_BASE || 'http://localhost:8081/api'
+).replace(/\/+$/, '');
 const REQUEST_TIMEOUT_MS = 10000;
 const LIVE_REFRESH_INTERVAL_MS = 5000;
 let currentNetworkState = null;

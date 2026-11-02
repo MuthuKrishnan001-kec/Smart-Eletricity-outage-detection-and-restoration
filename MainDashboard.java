@@ -83,6 +83,17 @@ public class MainDashboard extends JFrame {
     }
 
     public static void main(String[] args) {
+        if (args.length > 0 && "--headless".equals(args[0])) {
+            try {
+                String[] serverArgs = new String[args.length - 1];
+                System.arraycopy(args, 1, serverArgs, 0, serverArgs.length);
+                WebServer.main(serverArgs);
+            } catch (IOException exception) {
+                throw new IllegalStateException("Unable to start headless HTTP API server",
+                        exception);
+            }
+            return;
+        }
         SwingUtilities.invokeLater(() -> {
             new MainDashboard().setVisible(true);
             startHttpServer();
@@ -91,7 +102,9 @@ public class MainDashboard extends JFrame {
 
     public static void startHttpServer() {
         try {
-            HttpServer server = HttpServer.create(new InetSocketAddress(8081), 0);
+            int port = HttpServerConfig.portFromEnvironment();
+            HttpServer server = HttpServer.create(
+                    new InetSocketAddress("0.0.0.0", port), 0);
             server.createContext("/api/network", exchange -> handleDashboardReadRequest(
                     exchange, MainDashboard::buildNetworkPayload));
             server.createContext("/api/outages", exchange -> handleDashboardReadRequest(
@@ -140,7 +153,7 @@ public class MainDashboard extends JFrame {
             });
             server.setExecutor(Executors.newCachedThreadPool());
             server.start();
-            System.out.println("SmartGrid HTTP API running on http://localhost:8081");
+            System.out.println("SmartGrid HTTP API listening on 0.0.0.0:" + port);
         } catch (IOException exception) {
             throw new IllegalStateException("Unable to start HTTP API server", exception);
         }
@@ -427,9 +440,7 @@ public class MainDashboard extends JFrame {
     }
 
     private static void addCorsHeaders(HttpExchange exchange) {
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+        HttpServerConfig.addCorsHeaders(exchange);
     }
 
     private String buildNetworkPayload() {

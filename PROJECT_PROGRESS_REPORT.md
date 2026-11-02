@@ -225,6 +225,52 @@ Final Java regression results:
 
 The network remains a graph-connectivity simulation. It does not perform real
 voltage, current, load-flow, line-capacity, or protection-coordination analysis.
-Browser-level JavaScript execution checks were unavailable in the environment
-because Node.js is not installed; the Java API and frontend data fields were
-reviewed for consistency.
+
+## Online Deployment Preparation
+
+The HTTP API has two existing entry points: `MainDashboard` starts its own API
+alongside the Swing interface, while `WebServer` runs the API without opening a
+desktop window. `java MainDashboard --headless` delegates to `WebServer`, and
+the Docker image uses this headless path. Both servers bind to `0.0.0.0` and
+use the `PORT` environment variable, falling back to port 8081.
+
+The browser pages load `config.js` before `app.js`. Set
+`window.SMART_GRID_API_BASE` there to the deployed backend URL ending in `/api`;
+the default remains `http://localhost:8081/api`. For separate frontend and
+backend domains, configure the backend's `FRONTEND_ORIGIN` to the exact
+frontend origin (scheme and host, with a port if applicable, and no path or
+trailing slash). When configured, only that origin receives CORS permission.
+Without it, the backend allows only the documented local development origins.
+
+History remains in `outage_history.csv` in the working directory unless
+`DATA_DIR` is configured, in which case that directory contains
+`outage_history.csv`. For Render, create and mount a persistent disk at
+`/data`, then set `DATA_DIR=/data`. The Docker image defaults to `/data` and
+does not copy or initialize the repository's existing CSV into the container.
+
+Build and run locally from the repository root:
+
+```powershell
+docker build -t smart-grid-api .
+docker run --rm -p 8081:8081 -e PORT=8081 -e DATA_DIR=/data `
+  -v smart-grid-history:/data smart-grid-api
+```
+
+Render backend configuration:
+
+- Create a **Web Service** with **Docker** as the runtime.
+- Use the repository root as the Root Directory and `./Dockerfile` as the
+  Dockerfile Path. Leave custom build and start commands empty.
+- Set the health check path to `/api/health`.
+- Add a persistent disk mounted at `/data`.
+- Set `DATA_DIR=/data` and
+  `FRONTEND_ORIGIN=https://<your-frontend-service>.onrender.com`.
+- Let Render provide `PORT`; do not hardcode a production port.
+
+Render frontend configuration:
+
+- Create a **Static Site** using the same repository root.
+- Leave the build command empty and set the Publish Directory to `.`.
+- In `config.js`, set
+  `window.SMART_GRID_API_BASE` to
+  `https://<your-backend-service>.onrender.com/api`.
